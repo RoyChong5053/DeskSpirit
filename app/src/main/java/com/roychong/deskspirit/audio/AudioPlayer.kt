@@ -14,15 +14,14 @@ import kotlin.math.max
  * 播放 TTS 返回的音频。
  *
  * OpenRouter 的 TTS 返回的是**原始 PCM**（`audio/pcm;rate=24000;channels=1`），
- * 不是 MP3，所以这里优先走 AudioTrack；万一返回 mp3 之类就退回 MediaPlayer。
+ * 不是 MP3，所以优先走 AudioTrack；万一是 mp3 之类就退回 MediaPlayer。
  *
- * 播放过程中把音频能量回馈给渲染层，让球体跟着 AI 的声音跳动。
+ * 播放过程中把音频能量回馈给渲染层，让球体跟着 AI 的声音跳。
  */
 class AudioPlayer(private val context: Context) {
 
     @Volatile private var stopped = false
 
-    /** @return 实际使用的解码方式描述，失败抛异常。 */
     fun play(
         contentType: String,
         bytes: ByteArray,
@@ -50,6 +49,18 @@ class AudioPlayer(private val context: Context) {
         onDone: () -> Unit
     ) {
         val total = bytes.size / 2
+        if (total <= 0) {
+            onDone()
+            return
+        }
+
+        val minBuf = AudioTrack.getMinBufferSize(
+            sampleRate, AudioFormat.CHANNEL_OUT_MONO, AudioFormat.ENCODING_PCM_16BIT
+        )
+        // 关键：缓冲区只留几帧即可。开太大 write() 会瞬间返回，
+        // 声音就变成“一次性灌完”，后面必然被截断。
+        val bufferSize = if (minBuf > 0) max(minBuf * 4, 8192) else 65536
+
         val track = AudioTrack.Builder()
             .setAudioAttributes(
                 AudioAttributes.Builder()
@@ -64,7 +75,7 @@ class AudioPlayer(private val context: Context) {
                     .setChannelMask(AudioFormat.CHANNEL_OUT_MONO)
                     .build()
             )
-            .setBufferSizeInBytes(max(4096, total * 2))
+            .setBufferSizeInBytes(bufferSize)
             .setTransferMode(AudioTrack.MODE_STREAM)
             .build()
 
@@ -77,16 +88,22 @@ class AudioPlayer(private val context: Context) {
             while (offset < total && !stopped) {
                 val n = if (total - offset < chunk) total - offset else chunk
                 val pcm = Spectrum.le16ToShortsAt(bytes, offset, n)
+                // MODE_STREAM：缓冲区满时 write 会阻塞，天然按实时速度喂数据
                 track.write(pcm, 0, n)
                 onLevel(spectrum.analyze(pcm, n))
                 offset += n
             }
-            // 让缓冲区播完
-            var wait = 0
-            while (wait < 400 && !stopped) {
-                Thread.sleep(10)
-                wait++
+
+            // 等缓冲区里的声音真正播完，而不是等固定几秒
+            val durationMs = total * 1000L / sampleRate
+            val deadline = System.currentTimeMillis() + durationMs + 3000
+            while (!stopped && track.playbackHeadPosition < total &&
+                System.currentTimeMillis() < deadline
+            ) {
+                Thread.sleep(20)
             }
+        } catch (e: Exception) {
+            Log.e(TAG, "playPcm failed", e)
         } finally {
             runCatching { track.stop() }
             runCatching { track.release() }
@@ -96,9 +113,9 @@ class AudioPlayer(private val context: Context) {
 
     private fun playFile(bytes: ByteArray, onDone: () -> Unit) {
         val file = File(context.cacheDir, "tts_reply.tmp")
-        file.writeBytes(bytes)
         val player = MediaPlayer()
         try {
+            file.writeBytes(bytes)
             player.setAudioAttributes(
                 AudioAttributes.Builder()
                     .setUsage(AudioAttributes.USAGE_MEDIA)
@@ -107,9 +124,7 @@ class AudioPlayer(private val context: Context) {
             )
             player.setDataSource(file.absolutePath)
             player.prepare()
-            player.setOnCompletionListener { onDone() }
             player.start()
-            // 阻塞到播完（简化：轮询）
             while (player.isPlaying && !stopped) Thread.sleep(20)
         } catch (e: Exception) {
             Log.e(TAG, "playFile failed", e)
@@ -124,7 +139,6 @@ class AudioPlayer(private val context: Context) {
         return m.groupValues[1].toIntOrNull()
     }
 
-    /** 静音用的 AudioManager，方便把音量调大。 */
     fun audioManager(): AudioManager =
         context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
 
