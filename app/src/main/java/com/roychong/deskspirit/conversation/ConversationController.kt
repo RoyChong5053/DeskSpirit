@@ -34,6 +34,10 @@ class ConversationController(
     private val onBands: (Spectrum.Bands) -> Unit,
     private val onUserText: (String) -> Unit,
     private val onAiText: (String) -> Unit,
+    /** 真正要念出来的文本（已口播清洗），给 KTV 字幕用。 */
+    private val onSpeechText: (String) -> Unit,
+    /** 播放进度 0f..1f，用来推进字幕高亮。 */
+    private val onSpeechProgress: (Float) -> Unit,
     private val onError: (String) -> Unit,
 ) {
 
@@ -166,9 +170,20 @@ class ConversationController(
             val speakText = SpeechText.forSpeech(reply).ifBlank { reply }
             if (speakText != reply) Log.i(TAG, "TTS 清洗 → ${speakText.length} chars（原文 ${reply.length}）")
             Log.i(TAG, "TTS 文本 → ${speakText.take(240)}")
+            // 先把要念的文本交给界面：字幕可以先铺好，不用等合成完
+            post { onSpeechText(speakText) }
             val audio = TtsClient.synthesize(tts.baseUrl, tts.apiKey, tts.model, tts.voice, speakText)
             Log.i(TAG, "TTS → ${audio.contentType} ${audio.bytes.size} bytes")
-            player.play(audio.contentType, audio.bytes, onLevel = { onBands(it) }, onDone = {})
+            player.play(
+                contentType = audio.contentType,
+                bytes = audio.bytes,
+                onLevel = { onBands(it) },
+                onProgress = { played, total ->
+                    if (total > 0) post { onSpeechProgress(played.toFloat() / total) }
+                },
+                onDone = {}
+            )
+            post { onSpeechProgress(1f) }
             Log.i(TAG, "playback done")
         } catch (e: Exception) {
             Log.e(TAG, "turn failed", e)

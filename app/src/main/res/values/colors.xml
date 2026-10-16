@@ -6,5 +6,6 @@
     <color name="accent_dim">#1B6E85</color>
     <color name="text_primary">#DCEFFF</color>
     <color name="text_secondary">#7FB4CC</color>
+    <color name="text_dim">#4E7A8C</color>
     <color name="field_bg">#14FFFFFF</color>
 </resources>

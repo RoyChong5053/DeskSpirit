@@ -16,7 +16,9 @@ import kotlin.math.max
  * OpenRouter 的 TTS 返回的是**原始 PCM**（`audio/pcm;rate=24000;channels=1`），
  * 不是 MP3，所以优先走 AudioTrack；万一是 mp3 之类就退回 MediaPlayer。
  *
- * 播放过程中把音频能量回馈给渲染层，让球体跟着 AI 的声音跳。
+ * 播放过程中做两件事：
+ *  - 把音频能量回馈给渲染层，让球体跟着 AI 的声音跳；
+ *  - 上报播放进度，给界面的 KTV 字幕用。
  */
 class AudioPlayer(private val context: Context) {
 
@@ -26,15 +28,16 @@ class AudioPlayer(private val context: Context) {
         contentType: String,
         bytes: ByteArray,
         onLevel: (Spectrum.Bands) -> Unit,
+        onProgress: (playedMs: Int, totalMs: Int) -> Unit = { _, _ -> },
         onDone: () -> Unit
     ) {
         stopped = false
         val type = contentType.lowercase()
         if (type.contains("pcm") || type.contains("l16") || type.contains("wave")) {
             val rate = parseRate(contentType) ?: 24000
-            playPcm(bytes, rate, onLevel, onDone)
+            playPcm(bytes, rate, onLevel, onProgress, onDone)
         } else {
-            playFile(bytes, onDone)
+            playFile(bytes, onProgress, onDone)
         }
     }
 
@@ -46,6 +49,7 @@ class AudioPlayer(private val context: Context) {
         bytes: ByteArray,
         sampleRate: Int,
         onLevel: (Spectrum.Bands) -> Unit,
+        onProgress: (Int, Int) -> Unit,
         onDone: () -> Unit
     ) {
         val total = bytes.size / 2
@@ -81,6 +85,16 @@ class AudioPlayer(private val context: Context) {
 
         val spectrum = Spectrum(1024)
         val chunk = 1024
+        val totalMs = (total * 1000L / sampleRate).toInt()
+
+        // 进度回调发声很密（每 1024 帧 ≈ 43ms），节流到 ~50ms 一次
+        var lastReport = 0L
+        fun report() {
+            val now = System.currentTimeMillis()
+            if (now - lastReport < 50) return
+            lastReport = now
+            onProgress(track.playbackHeadPosition * 1000 / sampleRate, totalMs)
+        }
 
         try {
             track.play()
@@ -91,15 +105,16 @@ class AudioPlayer(private val context: Context) {
                 // MODE_STREAM：缓冲区满时 write 会阻塞，天然按实时速度喂数据
                 track.write(pcm, 0, n)
                 onLevel(spectrum.analyze(pcm, n))
+                report()
                 offset += n
             }
 
             // 等缓冲区里的声音真正播完，而不是等固定几秒
-            val durationMs = total * 1000L / sampleRate
-            val deadline = System.currentTimeMillis() + durationMs + 3000
+            val deadline = System.currentTimeMillis() + totalMs + 3000L
             while (!stopped && track.playbackHeadPosition < total &&
                 System.currentTimeMillis() < deadline
             ) {
+                report()
                 Thread.sleep(20)
             }
         } catch (e: Exception) {
@@ -111,7 +126,11 @@ class AudioPlayer(private val context: Context) {
         onDone()
     }
 
-    private fun playFile(bytes: ByteArray, onDone: () -> Unit) {
+    private fun playFile(
+        bytes: ByteArray,
+        onProgress: (Int, Int) -> Unit,
+        onDone: () -> Unit
+    ) {
         val file = File(context.cacheDir, "tts_reply.tmp")
         val player = MediaPlayer()
         try {
@@ -125,7 +144,11 @@ class AudioPlayer(private val context: Context) {
             player.setDataSource(file.absolutePath)
             player.prepare()
             player.start()
-            while (player.isPlaying && !stopped) Thread.sleep(20)
+            val dur = runCatching { player.duration }.getOrDefault(0)
+            while (player.isPlaying && !stopped) {
+                onProgress(player.currentPosition, if (dur > 0) dur else 0)
+                Thread.sleep(50)
+            }
         } catch (e: Exception) {
             Log.e(TAG, "playFile failed", e)
         } finally {
