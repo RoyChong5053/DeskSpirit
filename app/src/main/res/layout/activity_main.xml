@@ -40,10 +40,20 @@
             android:id="@+id/tvStatus"
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="@string/status_idle"
+            android:text="@string/status_listening"
             android:textColor="@color/text_secondary"
             android:textSize="13sp"
             android:letterSpacing="0.04" />
+
+        <TextView
+            android:id="@+id/tvUser"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:textColor="@color/text_secondary"
+            android:textSize="13sp"
+            android:maxLines="2"
+            android:ellipsize="end" />
 
         <TextView
             android:id="@+id/tvReply"
