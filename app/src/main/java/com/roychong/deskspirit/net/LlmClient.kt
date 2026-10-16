@@ -88,6 +88,19 @@ object LlmClient {
                 val data = line.substring(5).trim()
                 if (data == "[DONE]") break
                 val json = runCatching { JSONObject(data) }.getOrNull() ?: continue
+
+                // TavernLab 会把上游错误包成 HTTP 200 + data:{"error":...} 透传
+                // （流式响应一旦写出 200 头就没法再改状态码），这里必须显式识别，
+                // 否则只会得到一个含糊的「没有返回内容」。
+                if (json.has("error")) {
+                    val e = json.opt("error")
+                    val msg = when (e) {
+                        is JSONObject -> e.optString("message").ifBlank { e.toString() }
+                        else -> e.toString()
+                    }
+                    throw IOException("LLM 上游报错：${msg.take(300)}")
+                }
+
                 // 推理模型会先吐 reasoning_content，这里只要正文
                 val delta = json.optJSONArray("choices")
                     ?.optJSONObject(0)?.optJSONObject("delta")
@@ -98,7 +111,7 @@ object LlmClient {
                 }
             }
         }
-        if (sb.isEmpty()) throw IOException("LLM 没有返回内容")
+        if (sb.isEmpty()) throw IOException("LLM 没有返回内容（上游可能出错，或模型不支持该参数）")
         return sb.toString()
     }
 }
