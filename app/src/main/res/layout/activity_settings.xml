@@ -1,0 +1,124 @@
+<?xml version="1.0" encoding="utf-8"?>
+<ScrollView xmlns:android="http://schemas.android.com/apk/res/android"
+    android:layout_width="match_parent"
+    android:layout_height="match_parent"
+    android:fitsSystemWindows="true"
+    android:background="@color/bg">
+
+    <LinearLayout
+        android:layout_width="match_parent"
+        android:layout_height="wrap_content"
+        android:orientation="vertical"
+        android:padding="20dp">
+
+        <TextView
+            android:layout_width="wrap_content"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="8dp"
+            android:text="DeskSpirit · API 配置"
+            android:textColor="@color/accent"
+            android:textSize="20sp"
+            android:textStyle="bold" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="20dp"
+            android:text="这些是 v0.1 的接口占位；填好并测试通过后，主界面就能接入对话。"
+            android:textColor="@color/text_secondary"
+            android:textSize="13sp" />
+
+        <!-- ============ LLM ============ -->
+        <TextView style="@style/SectionTitle" android:text="@string/sec_llm" />
+        <EditText
+            android:id="@+id/llmBase"
+            style="@style/FieldInput"
+            android:hint="@string/hint_base_url"
+            android:inputType="textUri" />
+        <EditText
+            android:id="@+id/llmKey"
+            style="@style/FieldInput"
+            android:hint="@string/hint_api_key"
+            android:inputType="textPassword" />
+        <EditText
+            android:id="@+id/llmModel"
+            style="@style/FieldInput"
+            android:hint="@string/hint_model"
+            android:inputType="text" />
+        <LinearLayout style="@style/TestRow">
+            <Button
+                android:id="@+id/btnTestLlm"
+                style="@style/TestButton"
+                android:text="@string/btn_test" />
+            <TextView
+                android:id="@+id/llmResult"
+                style="@style/ResultText" />
+        </LinearLayout>
+
+        <!-- ============ ASR ============ -->
+        <TextView style="@style/SectionTitle" android:text="@string/sec_asr" />
+        <EditText
+            android:id="@+id/asrBase"
+            style="@style/FieldInput"
+            android:hint="@string/hint_base_url"
+            android:inputType="textUri" />
+        <EditText
+            android:id="@+id/asrKey"
+            style="@style/FieldInput"
+            android:hint="@string/hint_api_key"
+            android:inputType="textPassword" />
+        <EditText
+            android:id="@+id/asrModel"
+            style="@style/FieldInput"
+            android:hint="@string/hint_model"
+            android:inputType="text" />
+        <LinearLayout style="@style/TestRow">
+            <Button
+                android:id="@+id/btnTestAsr"
+                style="@style/TestButton"
+                android:text="@string/btn_test" />
+            <TextView
+                android:id="@+id/asrResult"
+                style="@style/ResultText" />
+        </LinearLayout>
+
+        <!-- ============ TTS ============ -->
+        <TextView style="@style/SectionTitle" android:text="@string/sec_tts" />
+        <EditText
+            android:id="@+id/ttsBase"
+            style="@style/FieldInput"
+            android:hint="@string/hint_base_url"
+            android:inputType="textUri" />
+        <EditText
+            android:id="@+id/ttsKey"
+            style="@style/FieldInput"
+            android:hint="@string/hint_api_key"
+            android:inputType="textPassword" />
+        <EditText
+            android:id="@+id/ttsModel"
+            style="@style/FieldInput"
+            android:hint="@string/hint_model"
+            android:inputType="text" />
+        <EditText
+            android:id="@+id/ttsVoice"
+            style="@style/FieldInput"
+            android:hint="@string/hint_voice"
+            android:inputType="text" />
+        <LinearLayout style="@style/TestRow">
+            <Button
+                android:id="@+id/btnTestTts"
+                style="@style/TestButton"
+                android:text="@string/btn_test" />
+            <TextView
+                android:id="@+id/ttsResult"
+                style="@style/ResultText" />
+        </LinearLayout>
+
+        <Button
+            android:id="@+id/btnSave"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="24dp"
+            android:text="@string/btn_save" />
+    </LinearLayout>
+</ScrollView>

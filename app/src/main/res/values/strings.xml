@@ -1,0 +1,23 @@
+<resources>
+    <string name="app_name">DeskSpirit</string>
+    <string name="settings_title">设置</string>
+    <string name="status_idle">轻触屏幕开始对话</string>
+    <string name="status_listening">正在倾听…</string>
+    <string name="status_thinking">思考中…</string>
+    <string name="status_speaking">正在说话…</string>
+    <string name="reply_placeholder">（AI 回复会显示在这里）</string>
+    <string name="cd_settings">设置</string>
+
+    <!-- settings -->
+    <string name="sec_llm">LLM 对话</string>
+    <string name="sec_asr">ASR 语音识别</string>
+    <string name="sec_tts">TTS 语音合成</string>
+    <string name="hint_base_url">Base URL（如 https://api.xxx.com）</string>
+    <string name="hint_api_key">API Key</string>
+    <string name="hint_model">Model</string>
+    <string name="hint_voice">Voice（TTS 用）</string>
+    <string name="btn_test">测试</string>
+    <string name="btn_save">保存</string>
+    <string name="saved">已保存</string>
+    <string name="testing">测试中…</string>
+</resources>
