@@ -9,6 +9,7 @@ import com.roychong.deskspirit.audio.SpeechInput
 import com.roychong.deskspirit.audio.Spectrum
 import com.roychong.deskspirit.audio.Wav
 import com.roychong.deskspirit.config.ApiConfig
+import com.roychong.deskspirit.config.LlmMode
 import com.roychong.deskspirit.net.AsrClient
 import com.roychong.deskspirit.net.LlmClient
 import com.roychong.deskspirit.net.TtsClient
@@ -20,6 +21,11 @@ import java.util.concurrent.Executors
  *   常驻听 → VAD 切出一句话 → 关麦 → ASR → LLM(流式) → TTS → 播放 → 开麦
  *
  * 关麦这一步很关键：不然手机喇叭放出来的 AI 声音会被自己听回去。
+ *
+ * LLM 分两种模式：
+ *  - TAVERNLAB：只把这一句话发给 TavernLab，角色卡 / Context Budget / RAG 记忆 /
+ *    蒸馏全在服务端，客户端不保存任何上下文。
+ *  - OPENAI：通用 OpenAI 兼容端点，客户端自己带一小段历史（system 钉死不动）。
  */
 class ConversationController(
     context: Context,
@@ -37,10 +43,14 @@ class ConversationController(
     private val main = Handler(Looper.getMainLooper())
     private val appContext = context.applicationContext
     private val player = AudioPlayer(appContext)
+    private val mode = config.llmMode()
+
+    /** 只在 OPENAI 模式下使用。 */
     private val history = ArrayList<LlmClient.Msg>()
 
     init {
-        history.add(LlmClient.Msg("system", SYSTEM_PROMPT))
+        // TavernLab 模式下上下文在服务端，客户端不需要 system prompt / 历史
+        if (mode == LlmMode.OPENAI) history.add(LlmClient.Msg("system", SYSTEM_PROMPT))
     }
 
     private var input: SpeechInput? = null
@@ -124,21 +134,38 @@ class ConversationController(
             post { onUserText(userText) }
 
             postState(State.THINKING)
-            history.add(LlmClient.Msg("user", userText))
             val sb = StringBuilder()
-            val reply = LlmClient.streamChat(
-                llm.baseUrl, llm.apiKey, llm.model, history
-            ) { delta ->
-                sb.append(delta)
-                val partial = sb.toString()
-                post { onAiText(partial) }
+            val reply = when (mode) {
+                LlmMode.TAVERNLAB -> LlmClient.streamText(
+                    llm.baseUrl, llm.apiKey, llm.model, userText
+                ) { delta ->
+                    sb.append(delta)
+                    val partial = sb.toString()
+                    post { onAiText(partial) }
+                }
+
+                LlmMode.OPENAI -> {
+                    history.add(LlmClient.Msg("user", userText))
+                    val r = LlmClient.streamChat(
+                        llm.baseUrl, llm.apiKey, llm.model, history
+                    ) { delta ->
+                        sb.append(delta)
+                        val partial = sb.toString()
+                        post { onAiText(partial) }
+                    }
+                    history.add(LlmClient.Msg("assistant", r))
+                    trimHistory()
+                    r
+                }
             }
-            history.add(LlmClient.Msg("assistant", reply))
-            while (history.size > MAX_HISTORY) history.removeAt(0)
             Log.i(TAG, "LLM → ${reply.length} chars")
 
+            // 角色回复常有 *动作描写* / markdown / emoji，直接念很怪。
+            // 只清洗送进 TTS 的那一份，屏幕上的原文保持不动。
             postState(State.SPEAKING)
-            val audio = TtsClient.synthesize(tts.baseUrl, tts.apiKey, tts.model, tts.voice, reply)
+            val speakText = SpeechText.forSpeech(reply).ifBlank { reply }
+            if (speakText != reply) Log.i(TAG, "TTS 清洗 → ${speakText.length} chars（原文 ${reply.length}）")
+            val audio = TtsClient.synthesize(tts.baseUrl, tts.apiKey, tts.model, tts.voice, speakText)
             Log.i(TAG, "TTS → ${audio.contentType} ${audio.bytes.size} bytes")
             player.play(audio.contentType, audio.bytes, onLevel = { onBands(it) }, onDone = {})
             Log.i(TAG, "playback done")
@@ -152,6 +179,17 @@ class ConversationController(
         }
     }
 
+    /**
+     * 通用 OpenAI 模式的历史裁剪：system 钉在 index 0 永不淘汰，
+     * 只从最老的 user+assistant 成对删，保证窗口永远以 user 开头。
+     */
+    private fun trimHistory() {
+        while (history.size > 1 + MAX_TURNS * 2) {
+            history.removeAt(1)
+            if (history.size > 1) history.removeAt(1)
+        }
+    }
+
     private fun postState(s: State) = post { onState(s) }
 
     private fun post(block: () -> Unit) = main.post(block)
@@ -159,10 +197,10 @@ class ConversationController(
     companion object {
         private const val TAG = "Conversation"
 
-        /** 只带最近若干条上下文，避免把 always-listening 的对话越滚越大。 */
-        private const val MAX_HISTORY = 12
+        /** 通用 OpenAI 模式最多保留的轮数（TavernLab 模式不用这段历史）。 */
+        private const val MAX_TURNS = 8
 
-        /** 桌面伙伴的语气：短、口语化。回得短，TTS 也快。 */
+        /** 仅在通用 OpenAI 模式下使用：桌面伙伴的语气，短、口语化。 */
         private const val SYSTEM_PROMPT =
             "你是 DeskSpirit，一个住在手机里的桌面 AI 伙伴。用简短、口语化的中文回答，" +
                 "一般不超过两句话，除非对方明确要你详细说。"

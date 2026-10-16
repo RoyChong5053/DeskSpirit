@@ -20,6 +20,8 @@
     <string name="hint_api_key">API Key</string>
     <string name="hint_model">Model</string>
     <string name="hint_voice">Voice（TTS 用）</string>
+    <string name="label_tavernlab_mode">TavernLab 模式（服务端管上下文 / 记忆）</string>
+    <string name="hint_tavernlab">开：Base 填 http://192.168.100.78:8888/v1，Key 填 TavernLab 的 app_token；只发当前一句，角色卡与 RAG 记忆由服务端负责。关：普通 OpenAI 兼容端点，客户端自带历史。</string>
     <string name="btn_test">测试</string>
     <string name="btn_save">保存</string>
     <string name="saved">已保存</string>

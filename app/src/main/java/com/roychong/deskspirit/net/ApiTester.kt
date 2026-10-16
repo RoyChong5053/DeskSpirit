@@ -1,28 +1,37 @@
 package com.roychong.deskspirit.net
 
 import com.roychong.deskspirit.audio.Wav
+import com.roychong.deskspirit.config.LlmMode
 import org.json.JSONObject
 
 /**
- * 设置页的连通性测试。三个接口都按 OpenAI 兼容形态真实调用，
+ * 设置页的连通性测试。三个接口都按真实形态调用，
  * 所以“测试通过 = 主界面那一轮也能跑通”。
  */
 object ApiTester {
 
     data class Result(val ok: Boolean, val message: String)
 
-    fun testLlm(base: String, key: String, model: String): Result {
+    fun testLlm(base: String, key: String, model: String, mode: LlmMode): Result {
         if (base.isBlank()) return Result(false, "Base URL 为空")
         if (model.isBlank()) return Result(false, "Model 为空")
         return try {
             val t0 = System.currentTimeMillis()
             var ttft = -1L
-            val reply = LlmClient.streamChat(
-                base, key, model,
-                listOf(LlmClient.Msg("user", "只回复一个字：好"))
-            ) { ttft = if (ttft < 0) System.currentTimeMillis() - t0 else ttft }
+            val onDelta: (String) -> Unit = {
+                if (ttft < 0) ttft = System.currentTimeMillis() - t0
+            }
+            // 用一句自然的话：TavernLab 模式下这会真实写进角色的聊天记录
+            val probe = "在吗？"
+            val reply = when (mode) {
+                LlmMode.TAVERNLAB -> LlmClient.streamText(base, key, model, probe, onDelta)
+                LlmMode.OPENAI -> LlmClient.streamChat(
+                    base, key, model, listOf(LlmClient.Msg("user", probe)), onDelta
+                )
+            }
             val secs = if (ttft >= 0) "%.1f".format(ttft / 1000.0) else "?"
-            Result(true, "OK · 首字 ${secs}s · ${reply.trim().take(40)}")
+            val via = if (mode == LlmMode.TAVERNLAB) "TavernLab" else "OpenAI"
+            Result(true, "OK（$via）· 首字 ${secs}s · ${reply.trim().take(40)}")
         } catch (e: Exception) {
             Result(false, e.message ?: e.javaClass.simpleName)
         }

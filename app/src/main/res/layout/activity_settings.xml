@@ -24,7 +24,7 @@
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
             android:layout_marginBottom="20dp"
-            android:text="这些是 v0.1 的接口占位；填好并测试通过后，主界面就能接入对话。"
+            android:text="LLM 推荐指向 TavernLab（角色卡 / 记忆 / 上下文预算由它托管）；ASR、TTS 走云端接口。"
             android:textColor="@color/text_secondary"
             android:textSize="13sp" />
 
@@ -45,6 +45,24 @@
             style="@style/FieldInput"
             android:hint="@string/hint_model"
             android:inputType="text" />
+
+        <Switch
+            android:id="@+id/llmTavernLab"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:text="@string/label_tavernlab_mode"
+            android:textColor="@color/text_primary"
+            android:textSize="14sp" />
+
+        <TextView
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="4dp"
+            android:text="@string/hint_tavernlab"
+            android:textColor="@color/text_secondary"
+            android:textSize="12sp" />
+
         <LinearLayout style="@style/TestRow">
             <Button
                 android:id="@+id/btnTestLlm"
