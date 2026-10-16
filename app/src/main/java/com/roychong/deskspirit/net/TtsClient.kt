@@ -26,7 +26,8 @@ object TtsClient {
         conn.requestMethod = "POST"
         conn.doOutput = true
         conn.connectTimeout = 20000
-        conn.readTimeout = 120000
+        // 长回复的 TTS 合成要几十秒，给足余量
+        conn.readTimeout = 300000
         conn.setRequestProperty("Content-Type", "application/json")
         if (key.isNotBlank()) conn.setRequestProperty("Authorization", "Bearer $key")
 

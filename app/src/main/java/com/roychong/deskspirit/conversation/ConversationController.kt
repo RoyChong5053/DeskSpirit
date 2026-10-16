@@ -165,6 +165,7 @@ class ConversationController(
             postState(State.SPEAKING)
             val speakText = SpeechText.forSpeech(reply).ifBlank { reply }
             if (speakText != reply) Log.i(TAG, "TTS 清洗 → ${speakText.length} chars（原文 ${reply.length}）")
+            Log.i(TAG, "TTS 文本 → ${speakText.take(240)}")
             val audio = TtsClient.synthesize(tts.baseUrl, tts.apiKey, tts.model, tts.voice, speakText)
             Log.i(TAG, "TTS → ${audio.contentType} ${audio.bytes.size} bytes")
             player.play(audio.contentType, audio.bytes, onLevel = { onBands(it) }, onDone = {})

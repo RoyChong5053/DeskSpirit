@@ -4,6 +4,8 @@ import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.WindowManager
 import android.widget.ImageButton
 import android.widget.TextView
@@ -30,6 +32,21 @@ class MainActivity : AppCompatActivity() {
     private lateinit var tvReply: TextView
 
     private var controller: ConversationController? = null
+
+    /**
+     * 「思考中」的秒数走动。TavernLab 要先做 RAG 检索 + 上下文组装才回响应，
+     * embedding/rerank 落在 CPU channel 时可能要几十秒。把秒数显示出来，
+     * 用户能看出它还在干活，而不是卡死了。
+     */
+    private val ticker = Handler(Looper.getMainLooper())
+    private var thinkingSince = 0L
+    private val tick = object : Runnable {
+        override fun run() {
+            val s = (System.currentTimeMillis() - thinkingSince) / 1000
+            tvStatus.text = getString(R.string.status_thinking_fmt, s)
+            ticker.postDelayed(this, 500)
+        }
+    }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -97,6 +114,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun renderState(state: ConversationController.State) {
+        ticker.removeCallbacks(tick)
         tvStatus.text = getString(
             when (state) {
                 ConversationController.State.LISTENING -> R.string.status_listening
@@ -106,9 +124,16 @@ class MainActivity : AppCompatActivity() {
                 ConversationController.State.SPEAKING -> R.string.status_speaking
             }
         )
-        if (state == ConversationController.State.RECOGNIZING) {
-            tvReply.text = ""
-            tvUser.text = ""
+        when (state) {
+            ConversationController.State.RECOGNIZING -> {
+                tvReply.text = ""
+                tvUser.text = ""
+            }
+            ConversationController.State.THINKING -> {
+                thinkingSince = System.currentTimeMillis()
+                ticker.post(tick)
+            }
+            else -> Unit
         }
     }
 
@@ -119,6 +144,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onPause() {
+        ticker.removeCallbacks(tick)
         sphere.onPause()
         controller?.release()
         controller = null

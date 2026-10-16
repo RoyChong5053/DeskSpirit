@@ -68,8 +68,11 @@ object LlmClient {
         conn.requestMethod = "POST"
         conn.doOutput = true
         conn.connectTimeout = 20000
-        // 服务端要先做 RAG 检索，再加上模型本身，首字可能要十几秒
-        conn.readTimeout = 240000
+        // TavernLab 模式下这个连接会先等服务端做完 RAG 检索 + 上下文组装才回响应头，
+        // 而 RAG 的 embedding/rerank 现在可能落在 one-api 的 CPU channel 上（RTX 4060
+        // 在跑别的任务时就是如此），CPU 硬扛可能很慢。这里**故意不设激进超时**：
+        // 宁可等，也不要让本来能跑通的一轮失败。30 分钟只是兜底，防止连接彻底僵死。
+        conn.readTimeout = 1_800_000
         conn.setRequestProperty("Content-Type", "application/json")
         if (key.isNotBlank()) conn.setRequestProperty("Authorization", "Bearer $key")
         conn.outputStream.use { it.write(payload.toString().toByteArray()) }

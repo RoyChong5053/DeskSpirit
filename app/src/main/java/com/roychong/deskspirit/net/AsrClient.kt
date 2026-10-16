@@ -31,8 +31,8 @@ object AsrClient {
         val conn = URL(url).openConnection() as HttpURLConnection
         conn.requestMethod = "POST"
         conn.doOutput = true
-        conn.connectTimeout = 15000
-        conn.readTimeout = 90000
+        conn.connectTimeout = 20000
+        conn.readTimeout = 300000
         conn.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
         if (key.isNotBlank()) conn.setRequestProperty("Authorization", "Bearer $key")
 

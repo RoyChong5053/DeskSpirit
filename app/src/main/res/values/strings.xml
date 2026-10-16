@@ -7,6 +7,7 @@
     <string name="status_paused">已暂停（轻触继续）</string>
     <string name="status_recognizing">识别中…</string>
     <string name="status_thinking">思考中…</string>
+    <string name="status_thinking_fmt">思考中… %1$ds</string>
     <string name="status_speaking">说话中…</string>
 
     <string name="reply_placeholder">（AI 回复会显示在这里）</string>
