@@ -68,10 +68,20 @@ object LlmClient {
         var attempt = 0
         while (true) {
             val sb = StringBuilder()
+            val think = IntArray(1)
             try {
-                streamOnce(url, key, payload, sb, onDelta)
+                streamOnce(url, key, payload, sb, onDelta, think)
                 if (sb.isEmpty()) {
-                    throw IOException("LLM 没有返回内容（上游可能出错，或模型不支持该参数）")
+                    // 推理模型（如 nemotron / o 系列）会把 token 全花在 reasoning 上，
+                    // 正文一个字节都不吐。直接说「没有内容」会把排查带偏，这里分开报。
+                    throw IOException(
+                        if (think[0] > 0) {
+                            "LLM 只输出了思考过程（${think[0]} 字），没有正文。" +
+                                "多半是推理模型把 token 用在了 reasoning 上，或输出被上游截断。换一个非推理模型试试"
+                        } else {
+                            "LLM 没有返回内容（上游可能出错，或模型不支持该参数）"
+                        }
+                    )
                 }
                 return sb.toString()
             } catch (e: IOException) {
@@ -94,7 +104,8 @@ object LlmClient {
         key: String,
         payload: JSONObject,
         sb: StringBuilder,
-        onDelta: (String) -> Unit
+        onDelta: (String) -> Unit,
+        think: IntArray,
     ) {
         val conn = Http.open(url, key, "POST", readTimeoutMs = LLM_READ_TIMEOUT_MS)
         conn.doOutput = true
@@ -128,9 +139,14 @@ object LlmClient {
                         throw IOException("LLM 上游报错：${msg.take(300)}")
                     }
 
-                    // 推理模型会先吐 reasoning_content，这里只要正文
+                    // 推理模型会先吐 reasoning_content / reasoning，这里只要正文
                     val delta = json.optJSONArray("choices")
                         ?.optJSONObject(0)?.optJSONObject("delta")
+                    // 只用来判断「是不是全程在思考」，不展示；两种命名都见过：
+                    // OpenAI 的 reasoning_content、OpenRouter 的 reasoning。
+                    val reasoning = delta?.optString("reasoning_content").orEmpty() +
+                        delta?.optString("reasoning").orEmpty()
+                    if (reasoning.isNotEmpty()) think[0] += reasoning.length
                     val content = delta?.optString("content").orEmpty()
                     if (content.isNotEmpty()) {
                         sb.append(content)

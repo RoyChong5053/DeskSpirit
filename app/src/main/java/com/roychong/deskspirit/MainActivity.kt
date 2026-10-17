@@ -22,11 +22,13 @@ import com.roychong.deskspirit.config.ApiConfig
 import com.roychong.deskspirit.config.AudioSettings
 import com.roychong.deskspirit.config.LlmMode
 import com.roychong.deskspirit.conversation.ConversationController
+import com.roychong.deskspirit.net.TavernLabClient
 import com.roychong.deskspirit.render.SphereStyle
 import com.roychong.deskspirit.render.SphereView
 import com.roychong.deskspirit.settings.SettingsActivity
 import com.roychong.deskspirit.voice.VoiceLibraryActivity
 import com.roychong.deskspirit.voice.VoiceStore
+import kotlin.concurrent.thread
 
 /**
  * v0.1 主界面：上半屏音频驱动 3D 圆球，下半屏文字输出。
@@ -279,7 +281,11 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
+    /** 最近一次渲染的状态，用来在角色缓存更新后重画状态行。 */
+    private var lastState: ConversationController.State? = null
+
     private fun renderState(state: ConversationController.State) {
+        lastState = state
         ticker.removeCallbacks(tick)
         tvStatus.text = statusLine(
             getString(
@@ -311,6 +317,31 @@ class MainActivity : AppCompatActivity() {
         // 设置页可能刚换了外观 / 角色，回来时重新取一次
         sphere.setStyle(SphereStyle.of(local.sphereStyle()))
         startController()
+        syncCurrentChar()
+    }
+
+    /**
+     * 角色是 TavernLab 服务端的全局状态：在网页端换了之后，App 里的缓存会过期，
+     * 状态行就会显示错的人名。回前台时对一次，失败就静默保持原样。
+     */
+    private fun syncCurrentChar() {
+        if (config.llmMode() != LlmMode.TAVERNLAB) return
+        val ep = config.llm()
+        thread {
+            val name = runCatching { TavernLabClient.currentChar(ep.baseUrl, ep.apiKey) }
+                .getOrNull().orEmpty()
+            if (name.isBlank() || name == local.tavernChar()) return@thread
+            local.saveTavernChar(name)
+            runOnUiThread {
+                // THINKING 时状态行每 500ms 自己重画，不用管；其余常见状态重画一次
+                when (lastState) {
+                    ConversationController.State.LISTENING,
+                    ConversationController.State.PAUSED ->
+                        lastState?.let { renderState(it) }
+                    else -> Unit
+                }
+            }
+        }
     }
 
     override fun onPause() {
