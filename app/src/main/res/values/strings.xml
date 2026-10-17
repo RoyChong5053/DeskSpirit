@@ -12,6 +12,7 @@
     <string name="status_thinking">思考中…</string>
     <string name="status_thinking_fmt">思考中… %1$ds</string>
     <string name="status_speaking">说话中…</string>
+    <string name="status_synthesizing_fmt">合成中… %1$ds</string>
     <string name="status_refining_fmt">整理中… %1$ds</string>
     <string name="status_live_off">Live 已关闭 · 用口述或点按钮开启</string>
     <string name="status_with_char_fmt">%1$s · %2$s</string>

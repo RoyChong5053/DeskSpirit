@@ -136,10 +136,11 @@ class MainActivity : AppCompatActivity() {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
         btnReplay.setOnClickListener {
-            // 播放中 → 停止；播放完 → 重读
+            // 播放中 → 停止；其余可播状态下 → 重读
+            if (!btnReplay.isEnabled) return@setOnClickListener
             if (controller?.isSpeaking() == true) {
                 controller?.stopSpeaking()
-                updateReplayButton(speaking = false)
+                updateControls(ConversationController.State.LISTENING)
             } else if (controller?.replayLast() != true) {
                 Toast.makeText(this, getString(R.string.toast_nothing_to_replay), Toast.LENGTH_SHORT).show()
             }
@@ -348,6 +349,11 @@ class MainActivity : AppCompatActivity() {
             ConversationController.State.REFINING ->
                 startBusy(R.string.status_refining_fmt, -1)
 
+            // TTS 是"整段合成完才返回"，慢模型/长段落可能要几十秒。
+            // 这期间还没出声，状态不能写"说话中"。
+            ConversationController.State.SYNTHESIZING ->
+                startBusy(R.string.status_synthesizing_fmt, -1)
+
             else -> {
                 stopBusy()
                 tvStatus.text = statusLine(
@@ -363,7 +369,7 @@ class MainActivity : AppCompatActivity() {
                 )
             }
         }
-        updateReplayButton(speaking = state == ConversationController.State.SPEAKING)
+        updateControls(state)
         updateLiveButton()
         when (state) {
             ConversationController.State.RECOGNIZING -> {
@@ -382,6 +388,7 @@ class MainActivity : AppCompatActivity() {
         startController()
         controller?.onForeground()
         updateLiveButton()
+        updateControls(lastState)
         syncCurrentChar()
     }
 
@@ -423,8 +430,18 @@ class MainActivity : AppCompatActivity() {
         super.onDestroy()
     }
 
-    private fun updateReplayButton(speaking: Boolean) {
+    private fun updateControls(state: ConversationController.State?) {
+        val speaking = state == ConversationController.State.SPEAKING
         btnReplay.text = getString(if (speaking) R.string.btn_stop else R.string.btn_replay)
+
+        // 这一轮的音频还没准备好（识别/整理/思考/合成）时，重播没有意义：
+        // 置灰，避免像以前那样点出一段"上一条"，随后和新合成的声音撞在一起。
+        val pending = state == ConversationController.State.RECOGNIZING ||
+            state == ConversationController.State.REFINING ||
+            state == ConversationController.State.THINKING ||
+            state == ConversationController.State.SYNTHESIZING
+        btnReplay.isEnabled = !pending
+        btnReplay.alpha = if (pending) 0.4f else 1f
     }
 
     private fun updateLiveButton() {

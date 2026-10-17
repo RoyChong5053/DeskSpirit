@@ -53,7 +53,7 @@ class ConversationController(
     private val onNotice: (String) -> Unit = {},
 ) {
 
-    enum class State { LISTENING, RECOGNIZING, REFINING, THINKING, SPEAKING, PAUSED, LIVE_OFF }
+    enum class State { LISTENING, RECOGNIZING, REFINING, THINKING, SYNTHESIZING, SPEAKING, PAUSED, LIVE_OFF }
 
     private val worker = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
@@ -81,11 +81,16 @@ class ConversationController(
     /** 用户按了「停止」：这一轮不要再把字幕高亮推到结尾。 */
     @Volatile private var stopRequested = false
 
-    /** 最近一条 AI 语音（重放用）。 */
-    @Volatile private var lastEntry: VoiceEntry? = null
+    /**
+     * 最近一条**真正播放过**的 AI 语音（重放用）。
+     *
+     * 注意：合成完成但还没播出来的音频不算 —— 否则回前台按重播时，
+     * 会和「马上要播的那一条」撞在一起（曾经真的出过两段同时出声）。
+     */
+    @Volatile private var lastPlayedEntry: VoiceEntry? = null
 
-    /** 未落盘时的内存副本，保证"不存档也能重放"。 */
-    @Volatile private var lastAudio: Pair<String, ByteArray>? = null
+    /** 未落盘时的内存副本，保证"不存档也能重放"。同样只在真正播放后记录。 */
+    @Volatile private var lastPlayedAudio: Pair<String, ByteArray>? = null
 
     fun start() {
         if (released) return
@@ -186,7 +191,7 @@ class ConversationController(
     val isBusy: Boolean get() = busy
 
     /** 有没有可以重放的 AI 语音。 */
-    fun canReplay(): Boolean = lastEntry != null || lastAudio != null
+    fun canReplay(): Boolean = lastPlayedEntry != null || lastPlayedAudio != null
 
     fun startMic() {
         if (input != null || released) return
@@ -228,19 +233,18 @@ class ConversationController(
 
     /** 重放最近一条 AI 语音（同样关麦防回声）。 */
     fun replayLast(): Boolean {
-        // 内存没有（切过后台、进程被回收、甚至重启）就退到语音库里最新一条 AI 语音，
-        // 用户按「重读」永远有东西可听，而不是弹「没有消息」。
-        val entry = lastEntry?.takeIf { it.hasAudio }
+        // 优先「上次真正听过的那一条」；内存没有（进程被回收/重启）才退到
+        // 语音库里最新一条 AI 语音，保证重播永远有东西可听。
+        val entry = lastPlayedEntry?.takeIf { it.hasAudio }
             ?: store.list().firstOrNull { it.kind == VoiceKind.AI && it.hasAudio }
         val bytes: ByteArray
         val contentType: String
         val fromEntry = entry?.let { store.readBytes(it) }
         if (fromEntry != null) {
-            lastEntry = entry
             bytes = fromEntry
             contentType = entry.contentType
         } else {
-            val mem = lastAudio ?: return false
+            val mem = lastPlayedAudio ?: return false
             contentType = mem.first
             bytes = mem.second
         }
@@ -250,13 +254,18 @@ class ConversationController(
         submit {
             try {
                 speaking = true
-                postState(State.SPEAKING)
                 player.play(
                     contentType = contentType,
                     bytes = bytes,
                     onLevel = { onBands(it) },
                     onProgress = { _, _ -> },
-                    onDone = {}
+                    onDone = {},
+                    onStarted = {
+                        // 真正出声了才算「听过」的这一条
+                        if (entry != null) lastPlayedEntry = entry
+                        lastPlayedAudio = contentType to bytes
+                        postState(State.SPEAKING)
+                    },
                 )
             } catch (ex: Exception) {
                 Log.e(TAG, "replay failed", ex)
@@ -371,7 +380,9 @@ class ConversationController(
 
             // 角色回复常有 *动作描写* / markdown / emoji，直接念很怪。
             // 只清洗送进 TTS 的那一份，屏幕上的原文保持不动。
-            postState(State.SPEAKING)
+            // 注意：合成可能要几十秒，这段时间状态是「合成中」而不是「说话中」，
+            // 否则用户会以为已经出声了（慢 TTS 时界面在说谎）。
+            postState(State.SYNTHESIZING)
             val speakText = SpeechText.forSpeech(reply).ifBlank { reply }
             if (speakText != reply) Log.i(TAG, "TTS 清洗 → ${speakText.length} chars（原文 ${reply.length}）")
             Log.i(TAG, "TTS 文本 → ${speakText.take(240)}")
@@ -383,9 +394,15 @@ class ConversationController(
             )
             Log.i(TAG, "TTS → ${audio.contentType} ${audio.bytes.size} bytes")
 
-            // 存进语音库 + 记录用于重放
-            if (local.saveVoice()) {
-                lastEntry = store.save(
+            // controller 已经释放（Activity 真的退出了）：这一段没人听了，直接丢掉
+            if (released) {
+                Log.i(TAG, "released during TTS, drop audio")
+                return
+            }
+
+            // 存进语音库（只用于归档；重放只认真正播过的那一条）
+            val saved = if (local.saveVoice()) {
+                store.save(
                     bytes = audio.bytes,
                     contentType = audio.contentType,
                     text = speakText,
@@ -394,12 +411,10 @@ class ConversationController(
                     provider = tts.name,
                     kind = VoiceKind.AI,
                     durationMs = estimateDurationMs(audio.contentType, audio.bytes),
-                )
-                pruneQuietly()
+                ).also { pruneQuietly() }
             } else {
-                lastEntry = null
+                null
             }
-            lastAudio = audio.contentType to audio.bytes
 
             speaking = true
             stopRequested = false
@@ -410,7 +425,13 @@ class ConversationController(
                 onProgress = { played, total ->
                     if (total > 0) post { onSpeechProgress(played.toFloat() / total) }
                 },
-                onDone = {}
+                onDone = {},
+                onStarted = {
+                    // 真正出声了 → 记成「上次听过的」，并切到「说话中」
+                    lastPlayedEntry = saved
+                    lastPlayedAudio = audio.contentType to audio.bytes
+                    postState(State.SPEAKING)
+                },
             )
             speaking = false
             // 被「停止」打断时，不要把整段字幕一次性高亮到结尾

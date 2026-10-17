@@ -19,25 +19,66 @@ import kotlin.math.max
  * 播放过程中做两件事：
  *  - 把音频能量回馈给渲染层，让球体跟着 AI 的声音跳；
  *  - 上报播放进度，给界面的 KTV 字幕用。
+ *
+ * **进程内单路播放**：这台手机上曾经出现过两段语音同时出声（两个 Activity 实例
+ * 各有一个 player，旧实例的慢 TTS 合成完时新实例正在重播）。所以这里把"当前正在
+ * 播放的那一路"放在 companion 里：新播放开始前会先掐掉旧的，任何情况下只有一路声音。
  */
 class AudioPlayer(private val context: Context) {
 
-    @Volatile private var stopped = false
+    /** 一次播放的句柄：可由任意线程 cancel（另一个 player 开始播、或用户按停止）。 */
+    private class Playback {
+        @Volatile var cancelled = false
+        @Volatile var track: AudioTrack? = null
+        @Volatile var mp: MediaPlayer? = null
 
+        fun cancel() {
+            cancelled = true
+            val t = track
+            track = null
+            if (t != null) {
+                runCatching { t.pause() }
+                runCatching { t.flush() }
+                runCatching { t.stop() }
+                runCatching { t.release() }
+            }
+            val m = mp
+            mp = null
+            if (m != null) {
+                runCatching { m.stop() }
+                runCatching { m.release() }
+            }
+        }
+    }
+
+    /**
+     * 开始播放。若已有别的播放在进行，会**先停掉旧的**再开始这一路。
+     *
+     * @param onStarted 音频真正开始出声时回调（界面据此从「合成中」切到「说话中」）
+     */
     fun play(
         contentType: String,
         bytes: ByteArray,
         onLevel: (Spectrum.Bands) -> Unit,
         onProgress: (playedMs: Int, totalMs: Int) -> Unit = { _, _ -> },
-        onDone: () -> Unit
+        onDone: () -> Unit,
+        onStarted: () -> Unit = {},
     ) {
-        stopped = false
+        val pb = Playback()
+        val previous = synchronized(LOCK) {
+            val old = active
+            active = pb
+            old
+        }
+        // 旧的一路必须先停：既避免叠音，也把它占着的 AudioTrack 释放掉
+        previous?.cancel()
+
         val type = contentType.lowercase()
         if (type.contains("pcm") || type.contains("l16") || type.contains("wave")) {
             val rate = parseRate(contentType) ?: 24000
-            playPcm(bytes, rate, onLevel, onProgress, onDone)
+            playPcm(pb, bytes, rate, onLevel, onProgress, onDone, onStarted)
         } else {
-            playFile(bytes, onProgress, onDone)
+            playFile(pb, bytes, onProgress, onDone, onStarted)
         }
     }
 
@@ -46,7 +87,12 @@ class AudioPlayer(private val context: Context) {
         play(contentType, bytes, {}, { _, _ -> }, onDone)
 
     fun stop() {
-        stopped = true
+        val pb = synchronized(LOCK) {
+            val p = active
+            active = null
+            p
+        }
+        pb?.cancel()
     }
 
     /** 供外部把 PCM 包成 WAV 时复用（语音库落盘用）。 */
@@ -56,14 +102,17 @@ class AudioPlayer(private val context: Context) {
     }
 
     private fun playPcm(
+        pb: Playback,
         bytes: ByteArray,
         sampleRate: Int,
         onLevel: (Spectrum.Bands) -> Unit,
         onProgress: (Int, Int) -> Unit,
-        onDone: () -> Unit
+        onDone: () -> Unit,
+        onStarted: () -> Unit,
     ) {
         val total = bytes.size / 2
         if (total <= 0) {
+            finish(pb)
             onDone()
             return
         }
@@ -92,6 +141,7 @@ class AudioPlayer(private val context: Context) {
             .setBufferSizeInBytes(bufferSize)
             .setTransferMode(AudioTrack.MODE_STREAM)
             .build()
+        pb.track = track
 
         val spectrum = Spectrum(1024)
         val chunk = 1024
@@ -112,8 +162,9 @@ class AudioPlayer(private val context: Context) {
 
         try {
             track.play()
+            onStarted()
             var offset = 0
-            while (offset < total && !stopped) {
+            while (offset < total && !pb.cancelled) {
                 val n = if (total - offset < chunk) total - offset else chunk
                 val pcm = Spectrum.le16ToShortsAt(bytes, offset, n)
                 // MODE_STREAM：缓冲区满时 write 会阻塞，天然按实时速度喂数据
@@ -125,7 +176,7 @@ class AudioPlayer(private val context: Context) {
 
             // 等缓冲区里的声音真正播完，而不是等固定几秒
             val deadline = System.currentTimeMillis() + totalMs + 3000L
-            while (!stopped && track.playbackHeadPosition < total &&
+            while (!pb.cancelled && track.playbackHeadPosition < total &&
                 System.currentTimeMillis() < deadline
             ) {
                 report()
@@ -134,19 +185,24 @@ class AudioPlayer(private val context: Context) {
         } catch (e: Exception) {
             Log.e(TAG, "playPcm failed", e)
         } finally {
+            pb.track = null
             runCatching { track.stop() }
             runCatching { track.release() }
+            finish(pb)
         }
         onDone()
     }
 
     private fun playFile(
+        pb: Playback,
         bytes: ByteArray,
         onProgress: (Int, Int) -> Unit,
-        onDone: () -> Unit
+        onDone: () -> Unit,
+        onStarted: () -> Unit,
     ) {
         val file = File(context.cacheDir, "tts_reply.tmp")
         val player = MediaPlayer()
+        pb.mp = player
         try {
             file.writeBytes(bytes)
             player.setAudioAttributes(
@@ -158,17 +214,27 @@ class AudioPlayer(private val context: Context) {
             player.setDataSource(file.absolutePath)
             player.prepare()
             player.start()
+            onStarted()
             val dur = runCatching { player.duration }.getOrDefault(0)
-            while (player.isPlaying && !stopped) {
+            while (player.isPlaying && !pb.cancelled) {
                 onProgress(player.currentPosition, if (dur > 0) dur else 0)
                 Thread.sleep(50)
             }
         } catch (e: Exception) {
             Log.e(TAG, "playFile failed", e)
         } finally {
+            pb.mp = null
             runCatching { player.release() }
+            finish(pb)
         }
         onDone()
+    }
+
+    /** 播放结束（正常或被掐断）后把自己从"当前播放"里摘掉。 */
+    private fun finish(pb: Playback) {
+        synchronized(LOCK) {
+            if (active === pb) active = null
+        }
     }
 
     fun audioManager(): AudioManager =
@@ -176,6 +242,11 @@ class AudioPlayer(private val context: Context) {
 
     companion object {
         private const val TAG = "AudioPlayer"
+
+        private val LOCK = Any()
+
+        /** 进程内当前正在播放的那一路（跨 Activity 实例共享）。 */
+        private var active: Playback? = null
 
         /** 从 `audio/pcm;rate=24000` 这类 contentType 里取采样率。 */
         fun parseRate(contentType: String): Int? {
