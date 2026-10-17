@@ -11,6 +11,19 @@
         android:layout_width="match_parent"
         android:layout_height="match_parent" />
 
+    <!-- 左上角：应用标记（新 logo 的徽标部分） -->
+    <ImageView
+        android:id="@+id/ivLogo"
+        android:layout_width="56dp"
+        android:layout_height="wrap_content"
+        android:layout_gravity="top|start"
+        android:layout_marginStart="14dp"
+        android:layout_marginTop="14dp"
+        android:adjustViewBounds="true"
+        android:alpha="0.75"
+        android:contentDescription="@string/app_name"
+        android:src="@drawable/logo_mark" />
+
     <!-- 右上角：设置入口（保持画面干净，只留一个小齿轮） -->
     <ImageButton
         android:id="@+id/btnSettings"

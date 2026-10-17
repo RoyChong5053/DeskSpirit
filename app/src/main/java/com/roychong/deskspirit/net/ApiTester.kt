@@ -6,8 +6,6 @@ import com.roychong.deskspirit.config.LlmMode
 import com.roychong.deskspirit.config.Slot
 import org.json.JSONArray
 import org.json.JSONObject
-import java.net.HttpURLConnection
-import java.net.URL
 
 /**
  * 设置页的连通性测试。按真实形态调用，所以"测试通过 = 主界面那一轮也能跑通"。
@@ -83,13 +81,15 @@ object ApiTester {
         if (base.isBlank()) return Models(false, emptyList(), "Base URL 为空")
         return try {
             val url = Http.endpoint(base, "models", "/models")
-            val conn = URL(url).openConnection() as HttpURLConnection
-            conn.requestMethod = "GET"
-            conn.connectTimeout = 10000
-            conn.readTimeout = 20000
-            if (key.isNotBlank()) conn.setRequestProperty("Authorization", "Bearer $key")
-            val code = conn.responseCode
-            val body = Http.readText(if (code in 200..299) conn.inputStream else conn.errorStream)
+            val (code, body) = Http.retryOnce {
+                val conn = Http.open(url, key, readTimeoutMs = 20_000)
+                try {
+                    val c = conn.responseCode
+                    c to Http.readText(if (c in 200..299) conn.inputStream else conn.errorStream)
+                } finally {
+                    Http.close(conn)
+                }
+            }
             if (code !in 200..299) return Models(false, emptyList(), "HTTP $code · ${body.take(140)}")
             val arr: JSONArray = runCatching {
                 JSONObject(body).optJSONArray("data") ?: JSONArray()

@@ -84,6 +84,28 @@ class AudioSettings(context: Context) {
         .putInt(KV_MAX_DAYS, maxDays)
         .apply()
 
+    // ---- 界面外观 ----
+
+    /** 运行时的圆球 preset（见 SphereStyle）。 */
+    fun sphereStyle(): Int = sp.getInt(KS_SPHERE_STYLE, 0)
+
+    fun saveSphereStyle(id: Int) = sp.edit()
+        .putInt(KS_SPHERE_STYLE, id)
+        .apply()
+
+    // ---- TavernLab 当前角色 ----
+
+    /**
+     * 当前角色的**本地缓存**，只用于主界面显示。
+     * 真源是 TavernLab 服务端的 `current_char`（网页与 App 共享），
+     * 所以每次进设置页/切角色都会用服务端返回值刷新这里。
+     */
+    fun tavernChar(): String = sp.getString(KV_TAVERN_CHAR, "") ?: ""
+
+    fun saveTavernChar(name: String) = sp.edit()
+        .putString(KV_TAVERN_CHAR, name.trim())
+        .apply()
+
     // ---- 整理 prompt ----
 
     fun refinePrompt(): String = sp.getString(KV_REFINE_PROMPT, DEFAULT_REFINE_PROMPT)
@@ -112,6 +134,10 @@ class AudioSettings(context: Context) {
         private const val KV_MAX_DAYS = "voice_max_days"
 
         private const val KV_REFINE_PROMPT = "refine_prompt"
+
+        private const val KS_SPHERE_STYLE = "sphere_style"
+
+        private const val KV_TAVERN_CHAR = "tavern_char"
 
         const val DEFAULT_REFINE_PROMPT =
             "把下面这段语音识别出来的口述整理成通顺的段落：纠正明显的识别错别字，" +

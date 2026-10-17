@@ -9,6 +9,7 @@
     <string name="status_thinking">思考中…</string>
     <string name="status_thinking_fmt">思考中… %1$ds</string>
     <string name="status_speaking">说话中…</string>
+    <string name="status_with_char_fmt">%1$s · %2$s</string>
 
     <string name="reply_placeholder">（AI 回复会显示在这里）</string>
     <string name="cd_settings">设置</string>
@@ -20,10 +21,10 @@
     <string name="toast_nothing_to_replay">还没有可重放的语音</string>
 
     <!-- 设置 · 通用 -->
-    <string name="settings_subtitle">四个槽位各自独立配置，可云端/本地混搭（如 ASR 本地、TTS 云端）。每个槽位可存多组 profile 并切换当前使用的。</string>
+    <string name="settings_subtitle">四个槽位各自独立配置，可云端/本地混搭。每页只显示自己的设置：Main 管对话角色与外观，工具 LLM 管整理 prompt，ASR 管收音，TTS 管语音库。</string>
     <string name="sec_endpoint">端点</string>
     <string name="sec_endpoint_fmt">端点 · %1$s</string>
-    <string name="slot_llm">LLM 对话</string>
+    <string name="slot_llm">Main</string>
     <string name="slot_tool">工具 LLM</string>
     <string name="slot_asr">ASR</string>
     <string name="slot_tts">TTS</string>
@@ -32,23 +33,53 @@
     <string name="hint_api_key">API Key</string>
     <string name="hint_model">Model</string>
     <string name="hint_voice">Voice（TTS 用）</string>
-    <string name="label_tavernlab_mode">TavernLab 模式（服务端管上下文 / 记忆）</string>
+    <string name="label_tavernlab_mode">TavernLab 模式（服务端管上下文 / 记忆 / 角色卡）</string>
     <string name="btn_test">测试</string>
     <string name="btn_save">保存</string>
     <string name="saved">已保存</string>
     <string name="testing">测试中…</string>
 
-    <string name="prof_add">＋</string>
+    <string name="prof_add">＋新建</string>
     <string name="prof_dup">复制</string>
     <string name="prof_del">删除</string>
     <string name="prof_new">新配置 %1$d</string>
     <string name="prof_copy">%1$s 副本</string>
     <string name="prof_rename">重命名 profile</string>
+    <string name="prof_rename_btn">✎</string>
+    <string name="prof_created_hint">已新建；点 ✎ 可改名</string>
     <string name="prof_keep_one">至少保留一个 profile</string>
 
     <string name="btn_pull_models">拉取模型</string>
     <string name="pulling">拉取中…</string>
     <string name="pick_model">选择模型</string>
+
+    <!-- 设置 · Main：角色（TavernLab） -->
+    <string name="sec_char">角色（TavernLab）</string>
+    <string name="char_refresh">⟳ 刷新</string>
+    <string name="char_loading">读取角色中…</string>
+    <string name="char_failed_fmt">角色操作失败：%1$s</string>
+    <string name="char_switched_fmt">已切换到 %1$s</string>
+    <string name="char_none">TavernLab 没有返回角色</string>
+    <string name="char_hint">角色是 TavernLab 服务端全局的：这里切了，网页端也会跟着切。不同角色各自带记忆集合与聊天记录。</string>
+    <string name="char_unknown">（未知）</string>
+
+    <!-- 设置 · Main：外观 -->
+    <string name="sec_appearance">外观</string>
+    <string name="style_pick">圆球 preset</string>
+    <string name="style_hint">换一套圆球的观感，切回主界面即生效。</string>
+    <string name="style_aurora">极光玻璃</string>
+    <string name="style_aurora_desc">玻璃球 + 体积云，层次最丰富（初版）</string>
+    <string name="style_orbit">轨道仪</string>
+    <string name="style_orbit_desc">球外三圈发光轨道，低频让它们转得更快</string>
+    <string name="style_plasma">等离子</string>
+    <string name="style_plasma_desc">内部等离子对流，高频触发白色电弧</string>
+    <string name="style_wireframe">线框</string>
+    <string name="style_wireframe_desc">经纬网格 + 扫描线，科技感且省电</string>
+    <string name="style_ripple">水波</string>
+    <string name="style_ripple_desc">液面同心涟漪，低频激起大波</string>
+    <string name="style_breath">呼吸</string>
+    <string name="style_breath_desc">极简单色光晕，最省电，适合长时间挂机</string>
+    <string name="style_switched_fmt">外观：%1$s</string>
 
     <!-- 设置 · 收音 -->
     <string name="sec_vad">收音 / VAD</string>
@@ -63,6 +94,7 @@
     <!-- 设置 · 口述 -->
     <string name="sec_dictation">口述</string>
     <string name="dict_max_ms">最长时长 (ms)</string>
+    <string name="sec_rec_archive">录音存档</string>
 
     <!-- 设置 · 语音库 -->
     <string name="sec_library">语音库</string>
@@ -73,8 +105,8 @@
     <string name="lib_path_fmt">存档目录：%1$s</string>
 
     <!-- 设置 · 整理 -->
-    <string name="sec_refine">整理 prompt（工具 LLM）</string>
-    <string name="hint_tool_llm">整理口述用。必须是普通 OpenAI 兼容端点（不支持 TavernLab 模式），例如本地 llama.cpp。</string>
+    <string name="sec_refine">整理 prompt</string>
+    <string name="hint_tool_llm">整理口述用的。必须是普通 OpenAI 兼容端点（不支持 TavernLab 模式），例如本地 llama.cpp。prompt 就是下面这个模板。</string>
 
     <!-- 口述页 -->
     <string name="dict_title">口述</string>

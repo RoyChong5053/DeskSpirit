@@ -1,11 +1,13 @@
 package com.roychong.deskspirit.settings
 
+import android.graphics.BitmapFactory
 import android.os.Bundle
 import android.text.InputType
 import android.view.View
 import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.EditText
+import android.widget.ImageView
 import android.widget.Spinner
 import android.widget.Switch
 import android.widget.TextView
@@ -21,17 +23,21 @@ import com.roychong.deskspirit.config.LlmMode
 import com.roychong.deskspirit.config.Slot
 import com.roychong.deskspirit.config.VadParams
 import com.roychong.deskspirit.net.ApiTester
+import com.roychong.deskspirit.net.TavernLabClient
+import com.roychong.deskspirit.render.SphereStyle
 import com.roychong.deskspirit.voice.VoiceStore
 import kotlin.concurrent.thread
 
 /**
- * 设置页：
- *  - 每服务一组命名端点（profile），可增删/复制/测试/拉取模型，逐个切换"当前使用"
- *  - 收音（VAD）参数
- *  - 语音库（是否存档、清理上限）
- *  - 整理 prompt 模板
+ * 设置页：顶部四个槽位，**每页只显示自己的东西**。
  *
- * 编辑在内存工作副本里进行，「保存」时统一落盘。
+ *  - Main（LLM 对话）：端点 + TavernLab 开关 + 角色选择 + 圆球外观
+ *  - 工具 LLM：端点 + 整理 prompt 模板
+ *  - ASR：端点 + 收音/VAD + 口述时长 + 录音存档
+ *  - TTS：端点 + Voice + 语音库
+ *
+ * 端点区（profile 下拉 / 改名 / 新建 / 字段 / 测试）四页共用，只换下面的专属区块。
+ * 编辑在内存工作副本里进行，「保存」时统一落盘；角色切换是服务端动作，选了就立刻生效。
  */
 class SettingsActivity : AppCompatActivity() {
 
@@ -48,6 +54,22 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var tvEndpointTitle: TextView
     private lateinit var tvSlotHint: TextView
     private lateinit var slotButtons: Map<Slot, Button>
+
+    private lateinit var boxMain: View
+    private lateinit var boxTool: View
+    private lateinit var boxAsr: View
+    private lateinit var boxTts: View
+
+    // Main 页 · 角色
+    private lateinit var tvSecChar: TextView
+    private lateinit var rowChar: View
+    private lateinit var spChar: Spinner
+    private lateinit var ivCharAvatar: ImageView
+    private lateinit var tvCharHint: TextView
+
+    // Main 页 · 外观
+    private lateinit var spStyle: Spinner
+    private lateinit var tvStyleHint: TextView
 
     private lateinit var etEndSilence: EditText
     private lateinit var etMinLevel: EditText
@@ -72,6 +94,13 @@ class SettingsActivity : AppCompatActivity() {
     private var current: Slot = Slot.LLM_DIALOG
     private var rendering = false
 
+    /** 角色列表（服务端）。角色区只在 Main + TavernLab 模式下才有意义。 */
+    private var chars: List<TavernLabClient.Char> = emptyList()
+    private var charLoaded = false
+    private var charLoading = false
+    /** 正在切换/刷新的角色名，避免 Spinner 回调把用户的选择又弹回去。 */
+    private var charPinned: String? = null
+
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_settings)
@@ -87,6 +116,19 @@ class SettingsActivity : AppCompatActivity() {
         tvResult = findViewById(R.id.tvResult)
         tvEndpointTitle = findViewById(R.id.tvEndpointTitle)
         tvSlotHint = findViewById(R.id.tvSlotHint)
+
+        boxMain = findViewById(R.id.boxMain)
+        boxTool = findViewById(R.id.boxTool)
+        boxAsr = findViewById(R.id.boxAsr)
+        boxTts = findViewById(R.id.boxTts)
+
+        tvSecChar = findViewById(R.id.tvSecChar)
+        rowChar = findViewById(R.id.rowChar)
+        spChar = findViewById(R.id.spChar)
+        ivCharAvatar = findViewById(R.id.ivCharAvatar)
+        tvCharHint = findViewById(R.id.tvCharHint)
+        spStyle = findViewById(R.id.spStyle)
+        tvStyleHint = findViewById(R.id.tvStyleHint)
 
         etEndSilence = findViewById(R.id.etEndSilence)
         etMinLevel = findViewById(R.id.etMinLevel)
@@ -130,6 +172,8 @@ class SettingsActivity : AppCompatActivity() {
                 if (pos == st.active) return
                 commit()
                 st.active = pos
+                // 换了端点（可能换了 TavernLab 服务器），角色列表作废
+                if (current == Slot.LLM_DIALOG) invalidateChars()
                 renderEditor()
             }
 
@@ -137,12 +181,48 @@ class SettingsActivity : AppCompatActivity() {
         }
         spProfile.setOnLongClickListener { renameProfile(); true }
 
+        findViewById<View>(R.id.btnRenameProfile).setOnClickListener { renameProfile() }
         findViewById<View>(R.id.btnAddProfile).setOnClickListener { addProfile() }
         findViewById<View>(R.id.btnDupProfile).setOnClickListener { dupProfile() }
         findViewById<View>(R.id.btnDelProfile).setOnClickListener { delProfile() }
         findViewById<View>(R.id.btnTest).setOnClickListener { testEndpoint() }
         findViewById<View>(R.id.btnPullModels).setOnClickListener { pullModels() }
         findViewById<View>(R.id.btnSave).setOnClickListener { saveAll() }
+
+        swTavernLab.setOnCheckedChangeListener { _, _ ->
+            if (rendering) return@setOnCheckedChangeListener
+            renderCharSection()
+        }
+
+        // 角色：选了就切服务端当前角色
+        spChar.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(p: android.widget.AdapterView<*>?, v: View?, pos: Int, id: Long) {
+                if (rendering || chars.isEmpty()) return
+                val pick = chars[pos.coerceIn(0, chars.size - 1)]
+                if (pick.name == charPinned) return
+                switchChar(pick)
+            }
+
+            override fun onNothingSelected(p: android.widget.AdapterView<*>?) {}
+        }
+        findViewById<View>(R.id.btnCharRefresh).setOnClickListener { fetchChars(force = true) }
+
+        // 外观：选了立刻存（切回主界面即生效）
+        spStyle.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(p: android.widget.AdapterView<*>?, v: View?, pos: Int, id: Long) {
+                val st = SphereStyle.entries[pos.coerceIn(0, SphereStyle.entries.size - 1)]
+                tvStyleHint.text = getString(st.descRes)
+                if (rendering) return
+                local.saveSphereStyle(st.id)
+                Toast.makeText(
+                    this@SettingsActivity,
+                    getString(R.string.style_switched_fmt, getString(st.labelRes)),
+                    Toast.LENGTH_SHORT
+                ).show()
+            }
+
+            override fun onNothingSelected(p: android.widget.AdapterView<*>?) {}
+        }
 
         loadLocalSettings()
         renderEditor()
@@ -171,11 +251,12 @@ class SettingsActivity : AppCompatActivity() {
         etKey.setText(e.apiKey)
         etModel.setText(e.model)
         etVoice.setText(e.voice)
-        swTavernLab.isChecked = e.llmMode == LlmMode.TAVERNLAB
+        swTavernLab.isChecked = current == Slot.LLM_DIALOG && e.llmMode == LlmMode.TAVERNLAB
 
         tvEndpointTitle.text = getString(R.string.sec_endpoint_fmt, current.label)
         etVoice.visibility = if (current.needsVoice) View.VISIBLE else View.GONE
-        swTavernLab.visibility = if (current.isLlm) View.VISIBLE else View.GONE
+        // TavernLab 只在 Main 那一页有意义：工具 LLM 明确不支持（见 hint_tool_llm）
+        swTavernLab.visibility = if (current == Slot.LLM_DIALOG) View.VISIBLE else View.GONE
         if (current == Slot.LLM_TOOL) {
             tvSlotHint.setText(R.string.hint_tool_llm)
             tvSlotHint.visibility = View.VISIBLE
@@ -184,10 +265,21 @@ class SettingsActivity : AppCompatActivity() {
         }
         tvResult.text = ""
 
+        // 每页只显示自己的区块
+        boxMain.visibility = if (current == Slot.LLM_DIALOG) View.VISIBLE else View.GONE
+        boxTool.visibility = if (current == Slot.LLM_TOOL) View.VISIBLE else View.GONE
+        boxAsr.visibility = if (current == Slot.ASR) View.VISIBLE else View.GONE
+        boxTts.visibility = if (current == Slot.TTS) View.VISIBLE else View.GONE
+
         for ((s, b) in slotButtons) {
             b.alpha = if (s == current) 1f else 0.5f
         }
         rendering = false
+
+        if (current == Slot.LLM_DIALOG) {
+            renderCharSection()
+            if (swTavernLab.isChecked) fetchChars(force = false)
+        }
     }
 
     private fun commit() {
@@ -200,24 +292,30 @@ class SettingsActivity : AppCompatActivity() {
             apiKey = etKey.text.toString().trim(),
             model = etModel.text.toString().trim(),
             voice = etVoice.text.toString().trim(),
-            llmMode = if (swTavernLab.isChecked) LlmMode.TAVERNLAB else LlmMode.OPENAI,
+            // 只有 Main 页的开关决定 TavernLab 模式；别的槽位一律普通 OpenAI 兼容
+            llmMode = if (current == Slot.LLM_DIALOG && swTavernLab.isChecked) {
+                LlmMode.TAVERNLAB
+            } else {
+                LlmMode.OPENAI
+            },
         )
     }
 
     private fun addProfile() {
         commit()
         val st = work[current]!!
-        st.list.add(Endpoint(name = getString(R.string.prof_new, st.list.size + 1)))
+        st.list.add(Endpoint(name = uniqueName(getString(R.string.prof_new, st.list.size + 1), st.list)))
         st.active = st.list.size - 1
         renderEditor()
         etBase.requestFocus()
+        Toast.makeText(this, getString(R.string.prof_created_hint), Toast.LENGTH_SHORT).show()
     }
 
     private fun dupProfile() {
         commit()
         val st = work[current]!!
         val src = st.list[st.active]
-        st.list.add(src.copy(name = getString(R.string.prof_copy, src.name)))
+        st.list.add(src.copy(name = uniqueName(getString(R.string.prof_copy, src.name), st.list)))
         st.active = st.list.size - 1
         renderEditor()
     }
@@ -244,15 +342,25 @@ class SettingsActivity : AppCompatActivity() {
             .setTitle(R.string.prof_rename)
             .setView(et)
             .setPositiveButton(android.R.string.ok) { _, _ ->
-                val name = et.text.toString().trim()
-                if (name.isNotEmpty()) {
+                val raw = et.text.toString().trim()
+                if (raw.isNotEmpty()) {
+                    val others = st.list.filterIndexed { i, _ -> i != st.active }
                     val old = st.list[st.active]
-                    st.list[st.active] = old.copy(name = name)
+                    st.list[st.active] = old.copy(name = uniqueName(raw, others))
                     renderEditor()
                 }
             }
             .setNegativeButton(android.R.string.cancel, null)
             .show()
+    }
+
+    /** 名字去重：重名追加 (2)、(3)…，免得一眼看去全是同名。 */
+    private fun uniqueName(want: String, taken: List<Endpoint>): String {
+        val used = taken.map { it.name }.toSet()
+        if (want !in used) return want
+        var i = 2
+        while ("$want ($i)" in used) i++
+        return "$want ($i)"
     }
 
     private fun testEndpoint() {
@@ -285,6 +393,125 @@ class SettingsActivity : AppCompatActivity() {
         }
     }
 
+    // ---------------- Main 页 · 角色 ----------------
+
+    private fun renderCharSection() {
+        val tavern = swTavernLab.isChecked
+        tvSecChar.visibility = if (tavern) View.VISIBLE else View.GONE
+        rowChar.visibility = if (tavern) View.VISIBLE else View.GONE
+        tvCharHint.visibility = if (tavern) View.VISIBLE else View.GONE
+        if (!tavern) {
+            invalidateChars()
+            return
+        }
+        if (chars.isEmpty()) {
+            ivCharAvatar.setImageDrawable(null)
+        }
+    }
+
+    private fun invalidateChars() {
+        chars = emptyList()
+        charLoaded = false
+        charPinned = null
+        rendering = true
+        spChar.adapter = ArrayAdapter(
+            this, android.R.layout.simple_spinner_item, listOf(getString(R.string.char_loading))
+        )
+        rendering = false
+    }
+
+    private fun fetchChars(force: Boolean) {
+        if (charLoading) return
+        if (charLoaded && !force) return
+        if (!swTavernLab.isChecked) return
+
+        commit()
+        val llm = work[Slot.LLM_DIALOG]?.let { it.list[it.active] } ?: return
+        if (llm.baseUrl.isBlank()) return
+
+        charLoading = true
+        tvCharHint.text = getString(R.string.char_loading)
+        thread {
+            val res = runCatching { TavernLabClient.characters(llm.baseUrl, llm.apiKey) }
+            val cur = runCatching { TavernLabClient.currentChar(llm.baseUrl, llm.apiKey) }.getOrDefault("")
+            runOnUiThread {
+                charLoading = false
+                tvCharHint.text = getString(R.string.char_hint)
+                val list = res.getOrNull()
+                if (list == null) {
+                    charLoaded = false
+                    tvCharHint.text = getString(
+                        R.string.char_failed_fmt,
+                        res.exceptionOrNull()?.message ?: "?"
+                    )
+                    return@runOnUiThread
+                }
+                chars = list
+                charLoaded = true
+                if (list.isEmpty()) {
+                    tvCharHint.text = getString(R.string.char_none)
+                    return@runOnUiThread
+                }
+                bindChars(cur.ifBlank { local.tavernChar() })
+            }
+        }
+    }
+
+    private fun bindChars(currentName: String) {
+        rendering = true
+        val labels = chars.map { it.name }
+        val ad = ArrayAdapter(this, android.R.layout.simple_spinner_item, labels)
+        ad.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        spChar.adapter = ad
+        val idx = chars.indexOfFirst { it.name == currentName }.coerceAtLeast(0)
+        spChar.setSelection(idx)
+        charPinned = chars[idx].name
+        rendering = false
+        loadAvatar(chars[idx])
+        if (currentName.isNotBlank()) local.saveTavernChar(chars[idx].name)
+    }
+
+    private fun switchChar(pick: TavernLabClient.Char) {
+        val llm = work[Slot.LLM_DIALOG]?.let { it.list[it.active] } ?: return
+        charPinned = pick.name
+        loadAvatar(pick)
+        local.saveTavernChar(pick.name)
+        tvCharHint.text = getString(R.string.char_switched_fmt, pick.name)
+        thread {
+            val res = runCatching {
+                TavernLabClient.setCurrentChar(llm.baseUrl, llm.apiKey, pick.name)
+            }
+            runOnUiThread {
+                if (res.isSuccess) {
+                    Toast.makeText(
+                        this, getString(R.string.char_switched_fmt, pick.name), Toast.LENGTH_SHORT
+                    ).show()
+                } else {
+                    tvCharHint.text = getString(
+                        R.string.char_failed_fmt,
+                        res.exceptionOrNull()?.message ?: "?"
+                    )
+                }
+            }
+        }
+    }
+
+    private fun loadAvatar(c: TavernLabClient.Char) {
+        val llm = work[Slot.LLM_DIALOG]?.let { it.list[it.active] } ?: return
+        if (c.avatarUrl.isBlank()) {
+            ivCharAvatar.setImageDrawable(null)
+            return
+        }
+        thread {
+            val bytes = TavernLabClient.avatarBytes(llm.baseUrl, llm.apiKey, c.avatarUrl)
+            val bmp = bytes?.let { runCatching { BitmapFactory.decodeByteArray(it, 0, it.size) }.getOrNull() }
+            runOnUiThread {
+                // 期间可能又切了角色，别把旧头像贴上去
+                if (charPinned == c.name) ivCharAvatar.setImageBitmap(bmp)
+            }
+        }
+    }
+
     // ---------------- 本地设置 ----------------
 
     private fun loadLocalSettings() {
@@ -305,6 +532,22 @@ class SettingsActivity : AppCompatActivity() {
         etRefinePrompt.setText(local.refinePrompt())
 
         tvLibPath.text = getString(R.string.lib_path_fmt, VoiceStore(this).dir.absolutePath)
+
+        // 外观
+        val styleAd = ArrayAdapter(
+            this,
+            android.R.layout.simple_spinner_item,
+            SphereStyle.entries.map { getString(it.labelRes) }
+        )
+        styleAd.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        val savedStyle = SphereStyle.of(local.sphereStyle())
+        rendering = true
+        spStyle.adapter = styleAd
+        spStyle.setSelection(savedStyle.ordinal)
+        tvStyleHint.text = getString(savedStyle.descRes)
+        rendering = false
+
+        invalidateChars()
     }
 
     private fun saveLocalSettings() {
@@ -327,6 +570,9 @@ class SettingsActivity : AppCompatActivity() {
             maxDays = etMaxDays.i(30).coerceAtLeast(0),
         )
         local.saveRefinePrompt(etRefinePrompt.text.toString())
+        local.saveSphereStyle(SphereStyle.entries[spStyle.selectedItemPosition.coerceIn(
+            0, SphereStyle.entries.size - 1
+        )].id)
     }
 
     private fun saveAll() {

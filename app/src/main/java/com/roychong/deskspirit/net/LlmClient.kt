@@ -1,10 +1,9 @@
 package com.roychong.deskspirit.net
 
+import android.util.Log
 import org.json.JSONArray
 import org.json.JSONObject
 import java.io.IOException
-import java.net.HttpURLConnection
-import java.net.URL
 
 /** LLM：OpenAI 兼容的 `/chat/completions`，流式返回增量文本。 */
 object LlmClient {
@@ -64,57 +63,89 @@ object LlmClient {
         val model = payload.optString("model")
         if (model.isBlank()) throw IOException("LLM Model 为空")
 
-        val conn = URL(url).openConnection() as HttpURLConnection
-        conn.requestMethod = "POST"
-        conn.doOutput = true
-        conn.connectTimeout = 20000
-        // TavernLab 模式下这个连接会先等服务端做完 RAG 检索 + 上下文组装才回响应头，
-        // 而 RAG 的 embedding/rerank 现在可能落在 one-api 的 CPU channel 上（RTX 4060
-        // 在跑别的任务时就是如此），CPU 硬扛可能很慢。这里**故意不设激进超时**：
-        // 宁可等，也不要让本来能跑通的一轮失败。30 分钟只是兜底，防止连接彻底僵死。
-        conn.readTimeout = 1_800_000
-        conn.setRequestProperty("Content-Type", "application/json")
-        if (key.isNotBlank()) conn.setRequestProperty("Authorization", "Bearer $key")
-        conn.outputStream.use { it.write(payload.toString().toByteArray()) }
-
-        val code = conn.responseCode
-        if (code !in 200..299) {
-            val err = Http.readText(conn.errorStream)
-            throw IOException("LLM HTTP $code: ${err.take(200)}")
-        }
-
-        val sb = StringBuilder()
-        conn.inputStream.bufferedReader().use { reader ->
-            while (true) {
-                val line = reader.readLine() ?: break
-                if (line.isEmpty() || !line.startsWith("data:")) continue
-                val data = line.substring(5).trim()
-                if (data == "[DONE]") break
-                val json = runCatching { JSONObject(data) }.getOrNull() ?: continue
-
-                // TavernLab 会把上游错误包成 HTTP 200 + data:{"error":...} 透传
-                // （流式响应一旦写出 200 头就没法再改状态码），这里必须显式识别，
-                // 否则只会得到一个含糊的「没有返回内容」。
-                if (json.has("error")) {
-                    val e = json.opt("error")
-                    val msg = when (e) {
-                        is JSONObject -> e.optString("message").ifBlank { e.toString() }
-                        else -> e.toString()
-                    }
-                    throw IOException("LLM 上游报错：${msg.take(300)}")
+        // 换新连接重试一次，但**只在还没吐出任何字的时候**：
+        // 已经流出内容再重试会重复半句话。
+        var attempt = 0
+        while (true) {
+            val sb = StringBuilder()
+            try {
+                streamOnce(url, key, payload, sb, onDelta)
+                if (sb.isEmpty()) {
+                    throw IOException("LLM 没有返回内容（上游可能出错，或模型不支持该参数）")
                 }
-
-                // 推理模型会先吐 reasoning_content，这里只要正文
-                val delta = json.optJSONArray("choices")
-                    ?.optJSONObject(0)?.optJSONObject("delta")
-                val content = delta?.optString("content").orEmpty()
-                if (content.isNotEmpty()) {
-                    sb.append(content)
-                    onDelta(content)
-                }
+                return sb.toString()
+            } catch (e: IOException) {
+                if (attempt >= 1 || sb.isNotEmpty() || !Http.isTransportError(e)) throw e
+                attempt++
+                Log.w(TAG, "LLM 第一次失败（${e.javaClass.simpleName}: ${e.message}），换新连接重试")
             }
         }
-        if (sb.isEmpty()) throw IOException("LLM 没有返回内容（上游可能出错，或模型不支持该参数）")
-        return sb.toString()
     }
+
+    /**
+     * 真正的一次流式请求。
+     *
+     * TavernLab 模式下服务端要先做完 RAG 检索 + 上下文组装才回响应头，
+     * embedding/rerank 落在 CPU 时可能要几十秒，所以读超时给到 5 分钟
+     * （以前是 30 分钟：那是"连接彻底僵死也要等半小时"，不如早点失败让界面提示）。
+     */
+    private fun streamOnce(
+        url: String,
+        key: String,
+        payload: JSONObject,
+        sb: StringBuilder,
+        onDelta: (String) -> Unit
+    ) {
+        val conn = Http.open(url, key, "POST", readTimeoutMs = LLM_READ_TIMEOUT_MS)
+        conn.doOutput = true
+        conn.setRequestProperty("Content-Type", "application/json")
+        try {
+            conn.outputStream.use { it.write(payload.toString().toByteArray()) }
+
+            val code = conn.responseCode
+            if (code !in 200..299) {
+                val err = Http.readText(conn.errorStream)
+                throw IOException("LLM HTTP $code: ${err.take(200)}")
+            }
+
+            conn.inputStream.bufferedReader().use { reader ->
+                while (true) {
+                    val line = reader.readLine() ?: break
+                    if (line.isEmpty() || !line.startsWith("data:")) continue
+                    val data = line.substring(5).trim()
+                    if (data == "[DONE]") break
+                    val json = runCatching { JSONObject(data) }.getOrNull() ?: continue
+
+                    // TavernLab 会把上游错误包成 HTTP 200 + data:{"error":...} 透传
+                    // （流式响应一旦写出 200 头就没法再改状态码），这里必须显式识别，
+                    // 否则只会得到一个含糊的「没有返回内容」。
+                    if (json.has("error")) {
+                        val e = json.opt("error")
+                        val msg = when (e) {
+                            is JSONObject -> e.optString("message").ifBlank { e.toString() }
+                            else -> e.toString()
+                        }
+                        throw IOException("LLM 上游报错：${msg.take(300)}")
+                    }
+
+                    // 推理模型会先吐 reasoning_content，这里只要正文
+                    val delta = json.optJSONArray("choices")
+                        ?.optJSONObject(0)?.optJSONObject("delta")
+                    val content = delta?.optString("content").orEmpty()
+                    if (content.isNotEmpty()) {
+                        sb.append(content)
+                        onDelta(content)
+                    }
+                }
+            }
+        } finally {
+            Http.close(conn)
+        }
+    }
+
+    private const val TAG = "LlmClient"
+
+    /** 首字/首包的等待上限：TavernLab 的 RAG 可能很慢，5 分钟兜底。 */
+    private const val LLM_READ_TIMEOUT_MS = 300_000
 }
+

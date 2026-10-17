@@ -24,4 +24,9 @@ class SphereView @JvmOverloads constructor(
     fun pushAudio(level: Float, bass: Float, mid: Float, treble: Float) {
         sphereRenderer.setFrame(level, bass, mid, treble)
     }
+
+    /** 切换外观 preset。 */
+    fun setStyle(style: SphereStyle) {
+        sphereRenderer.setStyle(style)
+    }
 }

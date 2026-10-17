@@ -11,13 +11,28 @@
         android:orientation="vertical"
         android:padding="20dp">
 
-        <TextView
+        <LinearLayout
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:text="@string/settings_title"
-            android:textColor="@color/accent"
-            android:textSize="20sp"
-            android:textStyle="bold" />
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <ImageView
+                android:layout_width="68dp"
+                android:layout_height="wrap_content"
+                android:adjustViewBounds="true"
+                android:contentDescription="@string/app_name"
+                android:src="@drawable/logo_mark" />
+
+            <TextView
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:layout_marginStart="10dp"
+                android:text="@string/settings_title"
+                android:textColor="@color/accent"
+                android:textSize="20sp"
+                android:textStyle="bold" />
+        </LinearLayout>
 
         <TextView
             android:layout_width="match_parent"
@@ -60,7 +75,7 @@
             style="@style/SectionTitle"
             android:text="@string/sec_endpoint" />
 
-        <!-- profile 行 -->
+        <!-- profile：下拉选择 + 改名 -->
         <LinearLayout
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
@@ -77,18 +92,31 @@
                 android:paddingEnd="8dp" />
 
             <Button
-                android:id="@+id/btnAddProfile"
+                android:id="@+id/btnRenameProfile"
                 style="@style/TestButton"
+                android:text="@string/prof_rename_btn" />
+        </LinearLayout>
+
+        <!-- profile：新建 / 复制 / 删除 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginBottom="6dp"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/btnAddProfile"
+                style="@style/ProfAction"
                 android:text="@string/prof_add" />
 
             <Button
                 android:id="@+id/btnDupProfile"
-                style="@style/TestButton"
+                style="@style/ProfAction"
                 android:text="@string/prof_dup" />
 
             <Button
                 android:id="@+id/btnDelProfile"
-                style="@style/TestButton"
+                style="@style/ProfAction"
                 android:text="@string/prof_del" />
         </LinearLayout>
 
@@ -151,104 +179,207 @@
             android:textSize="12sp"
             android:visibility="gone" />
 
-        <!-- ============ 收音 / VAD ============ -->
-        <TextView style="@style/SectionTitle" android:text="@string/sec_vad" />
-
-        <LinearLayout style="@style/RowWrap">
-            <TextView style="@style/RowLabel" android:text="@string/vad_end_silence" />
-            <EditText android:id="@+id/etEndSilence" style="@style/NumInput" />
-        </LinearLayout>
-
-        <LinearLayout style="@style/RowWrap">
-            <TextView style="@style/RowLabel" android:text="@string/vad_min_level" />
-            <EditText android:id="@+id/etMinLevel" style="@style/NumInput" />
-        </LinearLayout>
-
-        <LinearLayout style="@style/RowWrap">
-            <TextView style="@style/RowLabel" android:text="@string/vad_voice_ratio" />
-            <EditText android:id="@+id/etVoiceRatio" style="@style/NumInput" />
-        </LinearLayout>
-
-        <LinearLayout style="@style/RowWrap">
-            <TextView style="@style/RowLabel" android:text="@string/vad_max_speech" />
-            <EditText android:id="@+id/etMaxSpeech" style="@style/NumInput" />
-        </LinearLayout>
-
-        <LinearLayout style="@style/RowWrap">
-            <TextView style="@style/RowLabel" android:text="@string/vad_min_voiced" />
-            <EditText android:id="@+id/etMinVoiced" style="@style/NumInput" />
-        </LinearLayout>
-
-        <LinearLayout style="@style/RowWrap">
-            <TextView style="@style/RowLabel" android:text="@string/vad_min_ratio" />
-            <EditText android:id="@+id/etMinRatio" style="@style/NumInput" />
-        </LinearLayout>
-
-        <LinearLayout style="@style/RowWrap">
-            <TextView style="@style/RowLabel" android:text="@string/vad_min_speech" />
-            <EditText android:id="@+id/etMinSpeech" style="@style/NumInput" />
-        </LinearLayout>
-
-        <!-- ============ 口述 ============ -->
-        <TextView style="@style/SectionTitle" android:text="@string/sec_dictation" />
-
-        <LinearLayout style="@style/RowWrap">
-            <TextView style="@style/RowLabel" android:text="@string/dict_max_ms" />
-            <EditText android:id="@+id/etDictMax" style="@style/NumInput" />
-        </LinearLayout>
-
-        <!-- ============ 语音库 ============ -->
-        <TextView style="@style/SectionTitle" android:text="@string/sec_library" />
-
-        <Switch
-            android:id="@+id/swSaveVoice"
+        <!-- ============ Main 页：角色（TavernLab） ============ -->
+        <LinearLayout
+            android:id="@+id/boxMain"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="@string/lib_save_ai"
-            android:textColor="@color/text_primary"
-            android:textSize="14sp" />
+            android:orientation="vertical"
+            android:visibility="gone">
 
-        <Switch
-            android:id="@+id/swSaveUser"
-            android:layout_width="match_parent"
-            android:layout_height="wrap_content"
-            android:text="@string/lib_save_user"
-            android:textColor="@color/text_primary"
-            android:textSize="14sp" />
+            <TextView
+                android:id="@+id/tvSecChar"
+                style="@style/SectionTitle"
+                android:text="@string/sec_char" />
 
-        <LinearLayout style="@style/RowWrap">
-            <TextView style="@style/RowLabel" android:text="@string/lib_max_count" />
-            <EditText android:id="@+id/etMaxCount" style="@style/NumInput" />
+            <LinearLayout
+                android:id="@+id/rowChar"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:gravity="center_vertical"
+                android:orientation="horizontal">
+
+                <ImageView
+                    android:id="@+id/ivCharAvatar"
+                    android:layout_width="44dp"
+                    android:layout_height="44dp"
+                    android:background="@drawable/bg_avatar"
+                    android:clipToOutline="true"
+                    android:contentDescription="@string/sec_char"
+                    android:scaleType="centerCrop" />
+
+                <Spinner
+                    android:id="@+id/spChar"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_marginStart="10dp"
+                    android:layout_weight="1"
+                    android:background="@color/field_bg"
+                    android:paddingStart="8dp"
+                    android:paddingEnd="8dp" />
+
+                <Button
+                    android:id="@+id/btnCharRefresh"
+                    style="@style/TestButton"
+                    android:text="@string/char_refresh" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/tvCharHint"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="6dp"
+                android:text="@string/char_hint"
+                android:textColor="@color/text_secondary"
+                android:textSize="12sp" />
+
+            <!-- 外观 -->
+            <TextView style="@style/SectionTitle" android:text="@string/sec_appearance" />
+
+            <LinearLayout style="@style/RowWrap">
+                <TextView style="@style/RowLabel" android:text="@string/style_pick" />
+                <Spinner
+                    android:id="@+id/spStyle"
+                    android:layout_width="0dp"
+                    android:layout_height="wrap_content"
+                    android:layout_weight="1"
+                    android:background="@color/field_bg"
+                    android:paddingStart="8dp"
+                    android:paddingEnd="8dp" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/tvStyleHint"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:textColor="@color/text_secondary"
+                android:textSize="12sp" />
         </LinearLayout>
 
-        <LinearLayout style="@style/RowWrap">
-            <TextView style="@style/RowLabel" android:text="@string/lib_max_days" />
-            <EditText android:id="@+id/etMaxDays" style="@style/NumInput" />
+        <!-- ============ 工具 LLM 页：整理 prompt ============ -->
+        <LinearLayout
+            android:id="@+id/boxTool"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <TextView style="@style/SectionTitle" android:text="@string/sec_refine" />
+
+            <EditText
+                android:id="@+id/etRefinePrompt"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:background="@color/field_bg"
+                android:gravity="top|start"
+                android:inputType="textMultiLine"
+                android:minLines="4"
+                android:padding="12dp"
+                android:textColor="@color/text_primary"
+                android:textColorHint="@color/text_secondary"
+                android:textSize="14sp" />
         </LinearLayout>
 
-        <TextView
-            android:id="@+id/tvLibPath"
+        <!-- ============ ASR 页：收音 / VAD + 口述 + 录音存档 ============ -->
+        <LinearLayout
+            android:id="@+id/boxAsr"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="4dp"
-            android:textColor="@color/text_secondary"
-            android:textSize="12sp" />
+            android:orientation="vertical"
+            android:visibility="gone">
 
-        <!-- ============ 整理 prompt ============ -->
-        <TextView style="@style/SectionTitle" android:text="@string/sec_refine" />
+            <TextView style="@style/SectionTitle" android:text="@string/sec_vad" />
 
-        <EditText
-            android:id="@+id/etRefinePrompt"
+            <LinearLayout style="@style/RowWrap">
+                <TextView style="@style/RowLabel" android:text="@string/vad_end_silence" />
+                <EditText android:id="@+id/etEndSilence" style="@style/NumInput" />
+            </LinearLayout>
+
+            <LinearLayout style="@style/RowWrap">
+                <TextView style="@style/RowLabel" android:text="@string/vad_min_level" />
+                <EditText android:id="@+id/etMinLevel" style="@style/NumInput" />
+            </LinearLayout>
+
+            <LinearLayout style="@style/RowWrap">
+                <TextView style="@style/RowLabel" android:text="@string/vad_voice_ratio" />
+                <EditText android:id="@+id/etVoiceRatio" style="@style/NumInput" />
+            </LinearLayout>
+
+            <LinearLayout style="@style/RowWrap">
+                <TextView style="@style/RowLabel" android:text="@string/vad_max_speech" />
+                <EditText android:id="@+id/etMaxSpeech" style="@style/NumInput" />
+            </LinearLayout>
+
+            <LinearLayout style="@style/RowWrap">
+                <TextView style="@style/RowLabel" android:text="@string/vad_min_voiced" />
+                <EditText android:id="@+id/etMinVoiced" style="@style/NumInput" />
+            </LinearLayout>
+
+            <LinearLayout style="@style/RowWrap">
+                <TextView style="@style/RowLabel" android:text="@string/vad_min_ratio" />
+                <EditText android:id="@+id/etMinRatio" style="@style/NumInput" />
+            </LinearLayout>
+
+            <LinearLayout style="@style/RowWrap">
+                <TextView style="@style/RowLabel" android:text="@string/vad_min_speech" />
+                <EditText android:id="@+id/etMinSpeech" style="@style/NumInput" />
+            </LinearLayout>
+
+            <TextView style="@style/SectionTitle" android:text="@string/sec_dictation" />
+
+            <LinearLayout style="@style/RowWrap">
+                <TextView style="@style/RowLabel" android:text="@string/dict_max_ms" />
+                <EditText android:id="@+id/etDictMax" style="@style/NumInput" />
+            </LinearLayout>
+
+            <TextView style="@style/SectionTitle" android:text="@string/sec_rec_archive" />
+
+            <Switch
+                android:id="@+id/swSaveUser"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/lib_save_user"
+                android:textColor="@color/text_primary"
+                android:textSize="14sp" />
+        </LinearLayout>
+
+        <!-- ============ TTS 页：语音库 ============ -->
+        <LinearLayout
+            android:id="@+id/boxTts"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:background="@color/field_bg"
-            android:gravity="top|start"
-            android:inputType="textMultiLine"
-            android:minLines="4"
-            android:padding="12dp"
-            android:textColor="@color/text_primary"
-            android:textColorHint="@color/text_secondary"
-            android:textSize="14sp" />
+            android:orientation="vertical"
+            android:visibility="gone">
+
+            <TextView style="@style/SectionTitle" android:text="@string/sec_library" />
+
+            <Switch
+                android:id="@+id/swSaveVoice"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/lib_save_ai"
+                android:textColor="@color/text_primary"
+                android:textSize="14sp" />
+
+            <LinearLayout style="@style/RowWrap">
+                <TextView style="@style/RowLabel" android:text="@string/lib_max_count" />
+                <EditText android:id="@+id/etMaxCount" style="@style/NumInput" />
+            </LinearLayout>
+
+            <LinearLayout style="@style/RowWrap">
+                <TextView style="@style/RowLabel" android:text="@string/lib_max_days" />
+                <EditText android:id="@+id/etMaxDays" style="@style/NumInput" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/tvLibPath"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:textColor="@color/text_secondary"
+                android:textSize="12sp" />
+        </LinearLayout>
 
         <Button
             android:id="@+id/btnSave"

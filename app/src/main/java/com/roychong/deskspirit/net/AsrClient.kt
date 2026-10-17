@@ -3,7 +3,6 @@ package com.roychong.deskspirit.net
 import org.json.JSONObject
 import java.io.IOException
 import java.net.HttpURLConnection
-import java.net.URL
 
 /** ASR：OpenAI 兼容的 `/audio/transcriptions`（multipart 上传 wav）。 */
 object AsrClient {
@@ -23,39 +22,47 @@ object AsrClient {
         return postWav(base, key, model, wav)
     }
 
-    private fun postWav(base: String, key: String, model: String, wav: ByteArray): Pair<Int, String> {
+    /** 整段请求带一次重试（首包阶段失败会换新连接再来一遍）。 */
+    private fun postWav(base: String, key: String, model: String, wav: ByteArray): Pair<Int, String> =
+        Http.retryOnce { postWavOnce(base, key, model, wav) }
+
+    private fun postWavOnce(
+        base: String,
+        key: String,
+        model: String,
+        wav: ByteArray
+    ): Pair<Int, String> {
         val url = Http.endpoint(base, "transcriptions", "/audio/transcriptions")
         if (url.isEmpty()) return -1 to "ASR Base URL 为空"
 
         val boundary = "----DeskSpirit${System.nanoTime()}"
-        val conn = URL(url).openConnection() as HttpURLConnection
-        conn.requestMethod = "POST"
+        val conn = Http.open(url, key, "POST", readTimeoutMs = Http.READ_TIMEOUT_MS)
         conn.doOutput = true
-        conn.connectTimeout = 20000
-        conn.readTimeout = 300000
         conn.setRequestProperty("Content-Type", "multipart/form-data; boundary=$boundary")
-        if (key.isNotBlank()) conn.setRequestProperty("Authorization", "Bearer $key")
-
-        conn.outputStream.use { out ->
-            fun field(name: String, value: String) {
+        try {
+            conn.outputStream.use { out ->
+                fun field(name: String, value: String) {
+                    out.write("--$boundary\r\n".toByteArray())
+                    out.write("Content-Disposition: form-data; name=\"$name\"\r\n\r\n".toByteArray())
+                    out.write(value.toByteArray())
+                    out.write("\r\n".toByteArray())
+                }
+                field("model", model)
                 out.write("--$boundary\r\n".toByteArray())
-                out.write("Content-Disposition: form-data; name=\"$name\"\r\n\r\n".toByteArray())
-                out.write(value.toByteArray())
+                out.write(
+                    "Content-Disposition: form-data; name=\"file\"; filename=\"speech.wav\"\r\n".toByteArray()
+                )
+                out.write("Content-Type: audio/wav\r\n\r\n".toByteArray())
+                out.write(wav)
                 out.write("\r\n".toByteArray())
+                out.write("--$boundary--\r\n".toByteArray())
             }
-            field("model", model)
-            out.write("--$boundary\r\n".toByteArray())
-            out.write(
-                "Content-Disposition: form-data; name=\"file\"; filename=\"speech.wav\"\r\n".toByteArray()
-            )
-            out.write("Content-Type: audio/wav\r\n\r\n".toByteArray())
-            out.write(wav)
-            out.write("\r\n".toByteArray())
-            out.write("--$boundary--\r\n".toByteArray())
-        }
 
-        val code = conn.responseCode
-        val body = Http.readText(if (code in 200..299) conn.inputStream else conn.errorStream)
-        return code to body
+            val code = conn.responseCode
+            val body = Http.readText(if (code in 200..299) conn.inputStream else conn.errorStream)
+            return code to body
+        } finally {
+            Http.close(conn)
+        }
     }
 }

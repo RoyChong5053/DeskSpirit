@@ -21,7 +21,7 @@ enum class LlmMode {
 
 /** 服务槽位：每个槽位独立维护一组命名端点（profile），并可各自选一个当前使用。 */
 enum class Slot(val storeKey: String, val label: String) {
-    LLM_DIALOG("llm", "LLM 对话"),
+    LLM_DIALOG("llm", "Main"),
     LLM_TOOL("tool_llm", "工具 LLM（整理）"),
     ASR("asr", "ASR 语音识别"),
     TTS("tts", "TTS 语音合成");

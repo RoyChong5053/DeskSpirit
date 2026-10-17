@@ -20,7 +20,9 @@ import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.roychong.deskspirit.config.ApiConfig
 import com.roychong.deskspirit.config.AudioSettings
+import com.roychong.deskspirit.config.LlmMode
 import com.roychong.deskspirit.conversation.ConversationController
+import com.roychong.deskspirit.render.SphereStyle
 import com.roychong.deskspirit.render.SphereView
 import com.roychong.deskspirit.settings.SettingsActivity
 import com.roychong.deskspirit.voice.VoiceLibraryActivity
@@ -48,6 +50,9 @@ class MainActivity : AppCompatActivity() {
 
     private var controller: ConversationController? = null
 
+    private lateinit var config: ApiConfig
+    private lateinit var local: AudioSettings
+
     /** 从口述页带回、等待发送给伙伴的文本（onActivityResult 早于 onResume）。 */
     private var pendingSendText: String? = null
 
@@ -69,9 +74,15 @@ class MainActivity : AppCompatActivity() {
     private val tick = object : Runnable {
         override fun run() {
             val s = (System.currentTimeMillis() - thinkingSince) / 1000
-            tvStatus.text = getString(R.string.status_thinking_fmt, s)
+            tvStatus.text = statusLine(getString(R.string.status_thinking_fmt, s))
             ticker.postDelayed(this, 500)
         }
+    }
+
+    /** 状态行后缀：TavernLab 模式下顺带显示当前角色，免得搞不清在跟谁说话。 */
+    private fun statusLine(base: String): String {
+        val c = if (config.llmMode() == LlmMode.TAVERNLAB) local.tavernChar() else ""
+        return if (c.isBlank()) base else getString(R.string.status_with_char_fmt, base, c)
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -79,7 +90,11 @@ class MainActivity : AppCompatActivity() {
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         setContentView(R.layout.activity_main)
 
+        config = ApiConfig(this)
+        local = AudioSettings(this)
+
         sphere = findViewById(R.id.sphere)
+        sphere.setStyle(SphereStyle.of(local.sphereStyle()))
         tvStatus = findViewById(R.id.tvStatus)
         tvUser = findViewById(R.id.tvUser)
         tvReply = findViewById(R.id.tvReply)
@@ -140,8 +155,8 @@ class MainActivity : AppCompatActivity() {
         if (controller != null || !hasMic()) return
         val c = ConversationController(
             context = this,
-            config = ApiConfig(this),
-            local = AudioSettings(this),
+            config = config,
+            local = local,
             store = VoiceStore(this),
             onState = { renderState(it) },
             onBands = { b -> sphere.pushAudio(b.level, b.bass, b.mid, b.treble) },
@@ -266,14 +281,16 @@ class MainActivity : AppCompatActivity() {
 
     private fun renderState(state: ConversationController.State) {
         ticker.removeCallbacks(tick)
-        tvStatus.text = getString(
-            when (state) {
-                ConversationController.State.LISTENING -> R.string.status_listening
-                ConversationController.State.PAUSED -> R.string.status_paused
-                ConversationController.State.RECOGNIZING -> R.string.status_recognizing
-                ConversationController.State.THINKING -> R.string.status_thinking
-                ConversationController.State.SPEAKING -> R.string.status_speaking
-            }
+        tvStatus.text = statusLine(
+            getString(
+                when (state) {
+                    ConversationController.State.LISTENING -> R.string.status_listening
+                    ConversationController.State.PAUSED -> R.string.status_paused
+                    ConversationController.State.RECOGNIZING -> R.string.status_recognizing
+                    ConversationController.State.THINKING -> R.string.status_thinking
+                    ConversationController.State.SPEAKING -> R.string.status_speaking
+                }
+            )
         )
         when (state) {
             ConversationController.State.RECOGNIZING -> {
@@ -291,6 +308,8 @@ class MainActivity : AppCompatActivity() {
     override fun onResume() {
         super.onResume()
         sphere.onResume()
+        // 设置页可能刚换了外观 / 角色，回来时重新取一次
+        sphere.setStyle(SphereStyle.of(local.sphereStyle()))
         startController()
     }
 

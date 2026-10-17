@@ -1,6 +1,8 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
     <color name="bg">#05070D</color>
+    <!-- 自适应图标底色（与新 logo 的深色底一致） -->
+    <color name="ic_launcher_background">#05070D</color>
     <color name="bg_panel">#B3060A14</color>
     <color name="accent">#35E0FF</color>
     <color name="accent_dim">#1B6E85</color>
