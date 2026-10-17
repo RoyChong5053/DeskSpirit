@@ -90,7 +90,12 @@ class SpeechInput(
     fun stop() {
         if (!running) return
         running = false
-        thread?.let { runCatching { it.join(500) } }
+        // 注意：从录音线程自己调进来（VAD 切出 → onUtterance → 关麦）时，
+        // join 自己 = 干等 500ms，正好给 release() 的 shutdownNow 留出窗口，
+        // 之后 execute 就会被拒绝。此时只需要停 AudioRecord。
+        if (Thread.currentThread() !== thread) {
+            thread?.let { runCatching { it.join(500) } }
+        }
         thread = null
         record?.let {
             runCatching { it.stop() }

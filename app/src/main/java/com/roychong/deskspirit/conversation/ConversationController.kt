@@ -58,6 +58,9 @@ class ConversationController(
     private val appContext = context.applicationContext
     private val player = AudioPlayer(appContext)
 
+    /** release() 之后置位：被释放的控制器不再受理新话轮，也不能重新开麦。 */
+    @Volatile private var released = false
+
     /** 只在 OPENAI 模式下使用。 */
     private val history = ArrayList<LlmClient.Msg>()
     private var historyMode: LlmMode? = null
@@ -74,8 +77,23 @@ class ConversationController(
     @Volatile private var lastAudio: Pair<String, ByteArray>? = null
 
     fun start() {
+        if (released) return
         paused = false
         startMic()
+    }
+
+    /**
+     * 往 worker 里丢一轮活。release() 之后线程池已 shutdown，
+     * 此时麦克风线程晚到一步是正常节奏（回桌面 / 锁屏 / 进设置的瞬间切出语音），
+     * 直接把这一轮丢掉就行——在这条线程上抛异常会把整个 App 带崩。
+     */
+    private fun submit(block: () -> Unit) {
+        if (released) return
+        try {
+            worker.execute(block)
+        } catch (_: java.util.concurrent.RejectedExecutionException) {
+            Log.i(TAG, "controller released, utterance dropped")
+        }
     }
 
     fun togglePause() {
@@ -91,6 +109,7 @@ class ConversationController(
     }
 
     fun release() {
+        released = true
         stopMic()
         player.stop()
         worker.shutdownNow()
@@ -102,7 +121,7 @@ class ConversationController(
     fun canReplay(): Boolean = lastEntry != null || lastAudio != null
 
     fun startMic() {
-        if (input != null) return
+        if (input != null || released) return
         val si = SpeechInput(
             vad = local.vad(),
             onFrame = { bands, _ -> if (!busy) onBands(bands) },
@@ -125,7 +144,7 @@ class ConversationController(
         if (busy || paused) return
         busy = true
         stopMic()
-        worker.execute { runTurn(pcm, null) }
+        submit { runTurn(pcm, null) }
     }
 
     /** 口述 / 编辑后的文本直接进入对话（跳过 ASR）。 */
@@ -134,7 +153,7 @@ class ConversationController(
         if (t.isEmpty() || busy) return
         busy = true
         stopMic()
-        worker.execute { runTurn(null, t) }
+        submit { runTurn(null, t) }
     }
 
     /** 重放最近一条 AI 语音（同样关麦防回声）。 */
@@ -153,7 +172,7 @@ class ConversationController(
         if (busy) return false
         busy = true
         stopMic()
-        worker.execute {
+        submit {
             try {
                 postState(State.SPEAKING)
                 player.play(
@@ -300,7 +319,7 @@ class ConversationController(
             post { onError(msg) }
         } finally {
             busy = false
-            post { if (!paused) startMic() }
+            post { if (!paused && !released) startMic() }
         }
     }
 
