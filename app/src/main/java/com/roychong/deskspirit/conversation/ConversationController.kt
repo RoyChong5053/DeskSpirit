@@ -209,7 +209,10 @@ class ConversationController(
                         durationMs = pcm.size * 1000 / SpeechInput.SAMPLE_RATE,
                     )
                 }
-                userText = AsrClient.transcribe(asr.baseUrl, asr.apiKey, asr.model, wav) { sent, total ->
+                userText = AsrClient.transcribe(
+                    asr.baseUrl, asr.apiKey, asr.model, wav,
+                    readTimeoutMs = local.asrTimeoutSec() * 1000,
+                ) { sent, total ->
                     if (total > 0) {
                         val p = sent.toFloat() / total
                         post { onAsrProgress(p) }

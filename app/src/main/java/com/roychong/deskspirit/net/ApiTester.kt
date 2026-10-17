@@ -16,9 +16,9 @@ object ApiTester {
 
     data class Models(val ok: Boolean, val ids: List<String>, val message: String)
 
-    fun test(slot: Slot, e: Endpoint): Result = when (slot) {
+    fun test(slot: Slot, e: Endpoint, asrTimeoutSec: Int = 90): Result = when (slot) {
         Slot.LLM_DIALOG, Slot.LLM_TOOL -> testLlm(e)
-        Slot.ASR -> testAsr(e)
+        Slot.ASR -> testAsr(e, asrTimeoutSec)
         Slot.TTS -> testTts(e)
     }
 
@@ -47,12 +47,15 @@ object ApiTester {
         }
     }
 
-    fun testAsr(e: Endpoint): Result {
+    fun testAsr(e: Endpoint, timeoutSec: Int = 90): Result {
         if (e.baseUrl.isBlank()) return Result(false, "Base URL 为空")
         return try {
             // 传一段 1s 静音，只看接口是否可用（不需要真的说话）
             val silence = Wav.fromPcm16(ShortArray(16000), 16000, 16000)
-            val (code, body) = AsrClient.probe(e.baseUrl, e.apiKey, e.model, silence)
+            val (code, body) = AsrClient.probe(
+                e.baseUrl, e.apiKey, e.model, silence,
+                readTimeoutMs = timeoutSec.coerceIn(10, 3600) * 1000,
+            )
             if (code in 200..299) {
                 val text = runCatching { JSONObject(body).optString("text") }.getOrDefault("")
                 Result(true, "连通 OK ${if (text.isBlank()) "(静音无文本)" else "→ ${text.take(30)}"}")

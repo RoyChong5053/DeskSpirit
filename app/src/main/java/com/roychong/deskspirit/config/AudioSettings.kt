@@ -63,6 +63,20 @@ class AudioSettings(context: Context) {
         .putInt(KD_MAX, p.maxMs)
         .apply()
 
+    // ---- ASR 等待上限 ----
+
+    /**
+     * 整段音频送到服务端后，最多等多久拿识别结果（秒）。
+     *
+     * 本地 CPU 跑大模型时远不止一分钟（同步接口在出结果前一个字节都不回，
+     * 所以读超时就是"整段推理"的上限），需要能放宽；云端一般 90s 绰绰有余。
+     */
+    fun asrTimeoutSec(): Int = sp.getInt(KV_ASR_TIMEOUT, 90).coerceIn(10, 3600)
+
+    fun saveAsrTimeoutSec(sec: Int) = sp.edit()
+        .putInt(KV_ASR_TIMEOUT, sec.coerceIn(10, 3600))
+        .apply()
+
     // ---- 语音库 ----
 
     /** 是否把 TTS 生成的语音存档。 */
@@ -127,6 +141,8 @@ class AudioSettings(context: Context) {
         private const val KV_MIN_SPEECH = "vad_min_speech_ms"
 
         private const val KD_MAX = "dictation_max_ms"
+
+        private const val KV_ASR_TIMEOUT = "asr_timeout_s"
 
         private const val KV_SAVE_VOICE = "voice_save_ai"
         private const val KV_SAVE_USER = "voice_save_user"

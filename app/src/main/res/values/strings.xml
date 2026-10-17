@@ -85,6 +85,9 @@
     <string name="style_switched_fmt">外观：%1$s</string>
 
     <!-- 设置 · 收音 -->
+    <string name="sec_asr_net">识别超时</string>
+    <string name="asr_timeout_s">等待上限（秒）</string>
+    <string name="asr_timeout_hint">音频送到服务端后最多等多久。本地 CPU 跑大模型经常超过 1 分钟，可以调大到 180~300；云端一般 90 就够。</string>
     <string name="sec_vad">收音 / VAD</string>
     <string name="vad_end_silence">结束静音 (ms)</string>
     <string name="vad_min_level">绝对门限 RMS</string>

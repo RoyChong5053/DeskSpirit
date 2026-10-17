@@ -289,6 +289,22 @@
             android:orientation="vertical"
             android:visibility="gone">
 
+            <TextView style="@style/SectionTitle" android:text="@string/sec_asr_net" />
+
+            <LinearLayout style="@style/RowWrap">
+                <TextView style="@style/RowLabel" android:text="@string/asr_timeout_s" />
+                <EditText android:id="@+id/etAsrTimeout" style="@style/NumInput" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/tvAsrTimeoutHint"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:text="@string/asr_timeout_hint"
+                android:textColor="@color/text_secondary"
+                android:textSize="12sp" />
+
             <TextView style="@style/SectionTitle" android:text="@string/sec_vad" />
 
             <LinearLayout style="@style/RowWrap">

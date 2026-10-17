@@ -86,7 +86,10 @@ class DictationController(
                     return@execute
                 }
                 val wav = Wav.fromPcm16(pcm, pcm.size, SpeechInput.SAMPLE_RATE)
-                val text = AsrClient.transcribe(asr.baseUrl, asr.apiKey, asr.model, wav) { sent, total ->
+                val text = AsrClient.transcribe(
+                    asr.baseUrl, asr.apiKey, asr.model, wav,
+                    readTimeoutMs = local.asrTimeoutSec() * 1000,
+                ) { sent, total ->
                     if (total > 0) {
                         val p = sent.toFloat() / total
                         post { onProgress(p) }

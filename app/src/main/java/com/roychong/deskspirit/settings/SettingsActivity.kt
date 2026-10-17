@@ -71,6 +71,7 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var spStyle: Spinner
     private lateinit var tvStyleHint: TextView
 
+    private lateinit var etAsrTimeout: EditText
     private lateinit var etEndSilence: EditText
     private lateinit var etMinLevel: EditText
     private lateinit var etVoiceRatio: EditText
@@ -130,6 +131,7 @@ class SettingsActivity : AppCompatActivity() {
         spStyle = findViewById(R.id.spStyle)
         tvStyleHint = findViewById(R.id.tvStyleHint)
 
+        etAsrTimeout = findViewById(R.id.etAsrTimeout)
         etEndSilence = findViewById(R.id.etEndSilence)
         etMinLevel = findViewById(R.id.etMinLevel)
         etVoiceRatio = findViewById(R.id.etVoiceRatio)
@@ -368,7 +370,7 @@ class SettingsActivity : AppCompatActivity() {
         val e = work[current]!!.let { it.list[it.active] }
         tvResult.text = getString(R.string.testing)
         thread {
-            val res = ApiTester.test(current, e)
+            val res = ApiTester.test(current, e, local.asrTimeoutSec())
             runOnUiThread { tvResult.text = "${if (res.ok) "✔" else "✘"} ${res.message}" }
         }
     }
@@ -516,6 +518,7 @@ class SettingsActivity : AppCompatActivity() {
 
     private fun loadLocalSettings() {
         val v = local.vad()
+        etAsrTimeout.setText(local.asrTimeoutSec().toString())
         etEndSilence.setText(v.endSilenceMs.toString())
         etMinLevel.setText(v.minLevel.toString())
         etVoiceRatio.setText(v.voiceRatio.toString())
@@ -551,6 +554,7 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private fun saveLocalSettings() {
+        local.saveAsrTimeoutSec(etAsrTimeout.i(90).coerceIn(10, 3600))
         local.saveVad(
             VadParams(
                 endSilenceMs = etEndSilence.i(900),
