@@ -266,7 +266,10 @@ class DictationActivity : AppCompatActivity() {
         startInline(3)
         thread {
             try {
-                val audio = TtsClient.synthesize(tts.baseUrl, tts.apiKey, tts.model, tts.voice, text)
+                val audio = TtsClient.synthesize(
+                    tts.baseUrl, tts.apiKey, tts.model, tts.voice, text,
+                    readTimeoutMs = local.ttsTimeoutSec() * 1000,
+                )
                 if (local.saveVoice()) {
                     store.save(
                         audio.bytes, audio.contentType, text, tts.model, tts.voice,

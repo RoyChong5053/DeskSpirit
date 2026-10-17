@@ -88,6 +88,9 @@
     <string name="sec_asr_net">识别超时</string>
     <string name="asr_timeout_s">等待上限（秒）</string>
     <string name="asr_timeout_hint">音频送到服务端后最多等多久。本地 CPU 跑大模型经常超过 1 分钟，可以调大到 180~300；云端一般 90 就够。</string>
+    <string name="sec_tts_net">合成超时</string>
+    <string name="tts_timeout_s">等待上限（秒）</string>
+    <string name="tts_timeout_hint">TTS 是整段合成完才返回，长段落可能要几分钟。本地 TTS 建议先设 240~300；云端 90 一般够。</string>
     <string name="sec_vad">收音 / VAD</string>
     <string name="vad_end_silence">结束静音 (ms)</string>
     <string name="vad_min_level">绝对门限 RMS</string>

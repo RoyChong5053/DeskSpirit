@@ -14,7 +14,8 @@ object TtsClient {
         key: String,
         model: String,
         voice: String,
-        text: String
+        text: String,
+        readTimeoutMs: Int = Http.READ_TIMEOUT_MS,
     ): Audio {
         val url = Http.endpoint(base, "audio/speech", "/audio/speech")
         if (url.isEmpty()) throw IOException("TTS Base URL 为空")
@@ -22,7 +23,7 @@ object TtsClient {
 
         // 合成慢是常态（要等模型出完整段），给足读超时；传输层失败会换新连接重试一次，
         // 避免"第一次成功、第二次复用到死连接"那种假卡死。
-        return Http.retryOnce { synthesizeOnce(url, key, model, voice, text) }
+        return Http.retryOnce { synthesizeOnce(url, key, model, voice, text, readTimeoutMs) }
     }
 
     private fun synthesizeOnce(
@@ -30,9 +31,10 @@ object TtsClient {
         key: String,
         model: String,
         voice: String,
-        text: String
+        text: String,
+        readTimeoutMs: Int,
     ): Audio {
-        val conn = Http.open(url, key, "POST", readTimeoutMs = Http.READ_TIMEOUT_MS)
+        val conn = Http.open(url, key, "POST", readTimeoutMs = readTimeoutMs)
         conn.doOutput = true
         conn.setRequestProperty("Content-Type", "application/json")
         try {
@@ -42,7 +44,16 @@ object TtsClient {
             if (voice.isNotBlank()) payload.put("voice", voice)
             conn.outputStream.use { it.write(payload.toString().toByteArray()) }
 
-            val code = conn.responseCode
+            val code = try {
+                conn.responseCode
+            } catch (e: java.net.SocketTimeoutException) {
+                // 请求已送达，只是还没合成完。重试会重新合成一遍，没有意义。
+                throw IOException(
+                    "等待合成结果超时（${readTimeoutMs / 1000} 秒）：本地 TTS 可能太慢，" +
+                        "可在「设置 → TTS → 合成超时」把它调大",
+                    e,
+                )
+            }
             val contentType = (conn.contentType ?: "").lowercase()
             if (code !in 200..299) {
                 val err = Http.readText(conn.errorStream)

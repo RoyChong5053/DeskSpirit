@@ -368,6 +368,22 @@
             android:orientation="vertical"
             android:visibility="gone">
 
+            <TextView style="@style/SectionTitle" android:text="@string/sec_tts_net" />
+
+            <LinearLayout style="@style/RowWrap">
+                <TextView style="@style/RowLabel" android:text="@string/tts_timeout_s" />
+                <EditText android:id="@+id/etTtsTimeout" style="@style/NumInput" />
+            </LinearLayout>
+
+            <TextView
+                android:id="@+id/tvTtsTimeoutHint"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:text="@string/tts_timeout_hint"
+                android:textColor="@color/text_secondary"
+                android:textSize="12sp" />
+
             <TextView style="@style/SectionTitle" android:text="@string/sec_library" />
 
             <Switch

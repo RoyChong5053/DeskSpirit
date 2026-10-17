@@ -103,7 +103,11 @@ class AudioPlayer(private val context: Context) {
             val now = System.currentTimeMillis()
             if (now - lastReport < 50) return
             lastReport = now
-            onProgress(track.playbackHeadPosition * 1000 / sampleRate, totalMs)
+            // 注意用 Long 乘：playbackHeadPosition 是「帧数」，24kHz 下 89 秒后就
+            // 超过 Int 除以 1000 的安全范围，用 Int 乘 1000 会溢出成负数，
+            // 界面收到的进度就变成负的 → 高亮重置回开头然后永远不动（长文本的假故障）。
+            val playedMs = (track.playbackHeadPosition.toLong() * 1000L / sampleRate).toInt()
+            onProgress(playedMs.coerceAtMost(totalMs), totalMs)
         }
 
         try {

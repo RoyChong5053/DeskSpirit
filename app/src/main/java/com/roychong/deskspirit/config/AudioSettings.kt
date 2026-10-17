@@ -77,6 +77,18 @@ class AudioSettings(context: Context) {
         .putInt(KV_ASR_TIMEOUT, sec.coerceIn(10, 3600))
         .apply()
 
+    // ---- TTS 等待上限 ----
+
+    /**
+     * 合成请求最多等多久（秒）。本地 TTS 跑大模型时，长段落可能要几分钟，
+     * 而服务端是「全部合成完才返回」，等待期间一个字节都不回。
+     */
+    fun ttsTimeoutSec(): Int = sp.getInt(KV_TTS_TIMEOUT, 90).coerceIn(10, 3600)
+
+    fun saveTtsTimeoutSec(sec: Int) = sp.edit()
+        .putInt(KV_TTS_TIMEOUT, sec.coerceIn(10, 3600))
+        .apply()
+
     // ---- 语音库 ----
 
     /** 是否把 TTS 生成的语音存档。 */
@@ -143,6 +155,7 @@ class AudioSettings(context: Context) {
         private const val KD_MAX = "dictation_max_ms"
 
         private const val KV_ASR_TIMEOUT = "asr_timeout_s"
+        private const val KV_TTS_TIMEOUT = "tts_timeout_s"
 
         private const val KV_SAVE_VOICE = "voice_save_ai"
         private const val KV_SAVE_USER = "voice_save_user"

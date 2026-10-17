@@ -259,7 +259,10 @@ class ConversationController(
             Log.i(TAG, "TTS 文本 → ${speakText.take(240)}")
             post { onSpeechText(speakText) }
 
-            val audio = TtsClient.synthesize(tts.baseUrl, tts.apiKey, tts.model, tts.voice, speakText)
+            val audio = TtsClient.synthesize(
+                tts.baseUrl, tts.apiKey, tts.model, tts.voice, speakText,
+                readTimeoutMs = local.ttsTimeoutSec() * 1000,
+            )
             Log.i(TAG, "TTS → ${audio.contentType} ${audio.bytes.size} bytes")
 
             // 存进语音库 + 记录用于重放

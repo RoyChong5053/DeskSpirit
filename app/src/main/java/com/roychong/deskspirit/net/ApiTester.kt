@@ -16,11 +16,12 @@ object ApiTester {
 
     data class Models(val ok: Boolean, val ids: List<String>, val message: String)
 
-    fun test(slot: Slot, e: Endpoint, asrTimeoutSec: Int = 90): Result = when (slot) {
-        Slot.LLM_DIALOG, Slot.LLM_TOOL -> testLlm(e)
-        Slot.ASR -> testAsr(e, asrTimeoutSec)
-        Slot.TTS -> testTts(e)
-    }
+    fun test(slot: Slot, e: Endpoint, asrTimeoutSec: Int = 90, ttsTimeoutSec: Int = 90): Result =
+        when (slot) {
+            Slot.LLM_DIALOG, Slot.LLM_TOOL -> testLlm(e)
+            Slot.ASR -> testAsr(e, asrTimeoutSec)
+            Slot.TTS -> testTts(e, ttsTimeoutSec)
+        }
 
     fun testLlm(e: Endpoint): Result {
         if (e.baseUrl.isBlank()) return Result(false, "Base URL 为空")
@@ -67,11 +68,14 @@ object ApiTester {
         }
     }
 
-    fun testTts(e: Endpoint): Result {
+    fun testTts(e: Endpoint, timeoutSec: Int = 90): Result {
         if (e.baseUrl.isBlank()) return Result(false, "Base URL 为空")
         if (e.model.isBlank()) return Result(false, "Model 为空")
         return try {
-            val audio = TtsClient.synthesize(e.baseUrl, e.apiKey, e.model, e.voice, "你好，我是 DeskSpirit。")
+            val audio = TtsClient.synthesize(
+                e.baseUrl, e.apiKey, e.model, e.voice, "你好，我是 DeskSpirit。",
+                readTimeoutMs = timeoutSec.coerceIn(10, 3600) * 1000,
+            )
             val kind = audio.contentType.ifBlank { "audio/?" }
             Result(true, "OK · ${audio.bytes.size / 1024} KB · $kind")
         } catch (ex: Exception) {
