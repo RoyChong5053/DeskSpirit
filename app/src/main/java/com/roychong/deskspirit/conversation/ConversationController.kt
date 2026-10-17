@@ -39,6 +39,8 @@ class ConversationController(
     private val local: AudioSettings,
     private val store: VoiceStore,
     private val onState: (State) -> Unit,
+    /** 录音上传进度 0f..1f；1f 表示音频已送达，正在等服务端返回识别结果。 */
+    private val onAsrProgress: (Float) -> Unit = {},
     private val onBands: (Spectrum.Bands) -> Unit,
     private val onUserText: (String) -> Unit,
     private val onAiText: (String) -> Unit,
@@ -207,7 +209,12 @@ class ConversationController(
                         durationMs = pcm.size * 1000 / SpeechInput.SAMPLE_RATE,
                     )
                 }
-                userText = AsrClient.transcribe(asr.baseUrl, asr.apiKey, asr.model, wav)
+                userText = AsrClient.transcribe(asr.baseUrl, asr.apiKey, asr.model, wav) { sent, total ->
+                    if (total > 0) {
+                        val p = sent.toFloat() / total
+                        post { onAsrProgress(p) }
+                    }
+                }
                 Log.i(TAG, "ASR → $userText")
             }
             post { onUserText(userText) }

@@ -49,14 +49,31 @@
         android:background="@drawable/bg_panel"
         android:padding="18dp">
 
-        <TextView
-            android:id="@+id/tvStatus"
-            android:layout_width="wrap_content"
+        <LinearLayout
+            android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:text="@string/status_listening"
-            android:textColor="@color/text_secondary"
-            android:textSize="13sp"
-            android:letterSpacing="0.04" />
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <!-- 忙的时候转起来：识别/思考时用户一眼能看出没卡死 -->
+            <ProgressBar
+                android:id="@+id/pbBusy"
+                android:layout_width="14dp"
+                android:layout_height="14dp"
+                android:layout_marginEnd="8dp"
+                android:indeterminate="true"
+                android:indeterminateTint="@color/accent"
+                android:visibility="gone" />
+
+            <TextView
+                android:id="@+id/tvStatus"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
+                android:text="@string/status_listening"
+                android:textColor="@color/text_secondary"
+                android:textSize="13sp"
+                android:letterSpacing="0.04" />
+        </LinearLayout>
 
         <TextView
             android:id="@+id/tvUser"

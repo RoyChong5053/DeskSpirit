@@ -46,6 +46,7 @@ class MainActivity : AppCompatActivity() {
 
     private lateinit var sphere: SphereView
     private lateinit var tvStatus: TextView
+    private lateinit var pbBusy: android.widget.ProgressBar
     private lateinit var tvUser: TextView
     private lateinit var tvReply: TextView
     private lateinit var replyScroll: ScrollView
@@ -67,18 +68,40 @@ class MainActivity : AppCompatActivity() {
     private var hotColor = 0
 
     /**
-     * 「思考中」的秒数走动。TavernLab 要先做 RAG 检索 + 上下文组装才回响应，
-     * embedding/rerank 落在 CPU channel 时可能要几十秒。把秒数显示出来，
-     * 用户能看出它还在干活，而不是卡死了。
+     * 忙状态的秒数走动。识别（上传 + 服务端推理）常有 5-10 秒，
+     * TavernLab 的 RAG 首字可能几十秒 —— 光有静态文案用户分不清是慢还是卡死。
      */
     private val ticker = Handler(Looper.getMainLooper())
-    private var thinkingSince = 0L
+    /** 忙状态的计时：哪条文案 + 起始时间 + 可选的上传百分比。 */
+    private var busySince = 0L
+    private var busyLabel = 0
+    private var busyPct = -1
+
     private val tick = object : Runnable {
         override fun run() {
-            val s = (System.currentTimeMillis() - thinkingSince) / 1000
-            tvStatus.text = statusLine(getString(R.string.status_thinking_fmt, s))
+            if (busyLabel == 0) return
+            val s = ((System.currentTimeMillis() - busySince) / 1000).toInt()
+            var line = getString(busyLabel, s)
+            if (busyPct >= 0) line += " · " + getString(R.string.status_pct_fmt, busyPct)
+            tvStatus.text = statusLine(line)
             ticker.postDelayed(this, 500)
         }
+    }
+
+    /** 进入忙状态：转圈 + 秒数（+ 上传百分比）。 */
+    private fun startBusy(labelRes: Int, pct: Int) {
+        busyLabel = labelRes
+        busyPct = pct
+        busySince = System.currentTimeMillis()
+        pbBusy.visibility = View.VISIBLE
+        ticker.removeCallbacks(tick)
+        tick.run()
+    }
+
+    private fun stopBusy() {
+        busyLabel = 0
+        ticker.removeCallbacks(tick)
+        pbBusy.visibility = View.GONE
     }
 
     /** 状态行后缀：TavernLab 模式下顺带显示当前角色，免得搞不清在跟谁说话。 */
@@ -98,6 +121,7 @@ class MainActivity : AppCompatActivity() {
         sphere = findViewById(R.id.sphere)
         sphere.setStyle(SphereStyle.of(local.sphereStyle()))
         tvStatus = findViewById(R.id.tvStatus)
+        pbBusy = findViewById(R.id.pbBusy)
         tvUser = findViewById(R.id.tvUser)
         tvReply = findViewById(R.id.tvReply)
         replyScroll = findViewById(R.id.replyScroll)
@@ -161,6 +185,17 @@ class MainActivity : AppCompatActivity() {
             local = local,
             store = VoiceStore(this),
             onState = { renderState(it) },
+            onAsrProgress = { p ->
+                // 上传阶段显示真实百分比；到 100% 后切成「识别中」，秒数继续走
+                if (busyLabel == R.string.status_uploading_fmt) {
+                    val pct = (p * 100).toInt().coerceIn(0, 100)
+                    busyPct = pct
+                    if (pct >= 100) {
+                        busyLabel = R.string.status_recognizing_fmt
+                        busyPct = -1
+                    }
+                }
+            },
             onBands = { b -> sphere.pushAudio(b.level, b.bass, b.mid, b.treble) },
             onUserText = { text ->
                 tvUser.text = "你：$text"
@@ -286,26 +321,34 @@ class MainActivity : AppCompatActivity() {
 
     private fun renderState(state: ConversationController.State) {
         lastState = state
-        ticker.removeCallbacks(tick)
-        tvStatus.text = statusLine(
-            getString(
-                when (state) {
-                    ConversationController.State.LISTENING -> R.string.status_listening
-                    ConversationController.State.PAUSED -> R.string.status_paused
-                    ConversationController.State.RECOGNIZING -> R.string.status_recognizing
-                    ConversationController.State.THINKING -> R.string.status_thinking
-                    ConversationController.State.SPEAKING -> R.string.status_speaking
-                }
-            )
-        )
+        when (state) {
+            // 麦克风已经交出去了，正在上传音频 / 等服务端识别：这段常有 5-10 秒，
+            // 必须有秒数和转圈，否则看着像卡死。
+            ConversationController.State.RECOGNIZING ->
+                startBusy(R.string.status_uploading_fmt, 0)
+
+            // LLM 首字可能要几十秒
+            ConversationController.State.THINKING ->
+                startBusy(R.string.status_thinking_fmt, -1)
+
+            else -> {
+                stopBusy()
+                tvStatus.text = statusLine(
+                    getString(
+                        when (state) {
+                            ConversationController.State.LISTENING -> R.string.status_listening
+                            ConversationController.State.PAUSED -> R.string.status_paused
+                            ConversationController.State.SPEAKING -> R.string.status_speaking
+                            else -> R.string.status_listening
+                        }
+                    )
+                )
+            }
+        }
         when (state) {
             ConversationController.State.RECOGNIZING -> {
                 clearReply()
                 tvUser.text = ""
-            }
-            ConversationController.State.THINKING -> {
-                thinkingSince = System.currentTimeMillis()
-                ticker.post(tick)
             }
             else -> Unit
         }

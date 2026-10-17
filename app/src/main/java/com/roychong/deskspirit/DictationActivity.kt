@@ -44,10 +44,13 @@ class DictationActivity : AppCompatActivity() {
     private lateinit var tvHint: TextView
     private lateinit var recordPanel: LinearLayout
     private lateinit var reviewPanel: LinearLayout
+    private lateinit var recognizingPanel: LinearLayout
+    private lateinit var tvRecognizing: TextView
     private lateinit var tvRecog: TextView
     private lateinit var levelBar: ProgressBar
     private lateinit var etText: EditText
     private lateinit var tvStatus: TextView
+    private lateinit var pbInline: ProgressBar
     private lateinit var btnUndo: Button
 
     private var entry: VoiceEntry? = null
@@ -59,6 +62,58 @@ class DictationActivity : AppCompatActivity() {
             tvTimer.text = fmt(controller?.elapsedMs() ?: 0)
             ticker.postDelayed(this, 200)
         }
+    }
+
+    /** 识别 / 整理 / 合成 共用的「转圈 + 秒数」：0=不在忙，1=识别，2=整理，3=合成。 */
+    private var busyMode = 0
+    private var busySince = 0L
+    private var busyPct = -1
+    private val busyTick = object : Runnable {
+        override fun run() {
+            if (busyMode == 0) return
+            val s = ((System.currentTimeMillis() - busySince) / 1000).toInt()
+            when (busyMode) {
+                1 -> tvRecognizing.text = if (busyPct in 0..99) {
+                    getString(R.string.dict_uploading_fmt, s, busyPct)
+                } else {
+                    getString(R.string.dict_recognizing_fmt, s)
+                }
+                2 -> tvStatus.text = getString(R.string.dict_refining_fmt, s)
+                3 -> tvStatus.text = getString(R.string.dict_synthesizing_fmt, s)
+            }
+            ticker.postDelayed(this, 500)
+        }
+    }
+
+    private fun startRecognizing() {
+        busyMode = 1
+        busyPct = 0
+        busySince = System.currentTimeMillis()
+        recordPanel.visibility = View.GONE
+        recognizingPanel.visibility = View.VISIBLE
+        ticker.removeCallbacks(busyTick)
+        busyTick.run()
+    }
+
+    private fun stopRecognizing() {
+        if (busyMode == 1) busyMode = 0
+        ticker.removeCallbacks(busyTick)
+        recognizingPanel.visibility = View.GONE
+    }
+
+    /** 编辑区里的短任务（整理 / 朗读）：小转圈 + 秒数。 */
+    private fun startInline(mode: Int) {
+        busyMode = mode
+        busySince = System.currentTimeMillis()
+        pbInline.visibility = View.VISIBLE
+        ticker.removeCallbacks(busyTick)
+        busyTick.run()
+    }
+
+    private fun stopInline() {
+        if (busyMode == 2 || busyMode == 3) busyMode = 0
+        ticker.removeCallbacks(busyTick)
+        pbInline.visibility = View.GONE
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -73,10 +128,13 @@ class DictationActivity : AppCompatActivity() {
         tvHint = findViewById(R.id.tvHint)
         recordPanel = findViewById(R.id.recordPanel)
         reviewPanel = findViewById(R.id.reviewPanel)
+        recognizingPanel = findViewById(R.id.recognizingPanel)
+        tvRecognizing = findViewById(R.id.tvRecognizing)
         tvRecog = findViewById(R.id.tvRecog)
         levelBar = findViewById(R.id.levelBar)
         etText = findViewById(R.id.etText)
         tvStatus = findViewById(R.id.tvStatus)
+        pbInline = findViewById(R.id.pbInline)
         btnUndo = findViewById(R.id.btnUndo)
 
         findViewById<View>(R.id.btnStop).setOnClickListener { controller?.stop() }
@@ -106,9 +164,16 @@ class DictationActivity : AppCompatActivity() {
             store = store,
             onState = { st ->
                 if (st == DictationController.State.RECOGNIZING) {
-                    tvRecog.visibility = View.VISIBLE
+                    // 麦克风已经关了，现在是「上传 + 等服务端识别」：整块换成转圈面板，
+                    // 秒数和上传百分比一起走，别让录音面板僵在那里像卡死。
+                    startRecognizing()
                     tvStatus.text = ""
+                } else {
+                    stopRecognizing()
                 }
+            },
+            onProgress = { p ->
+                if (busyMode == 1) busyPct = (p * 100).toInt().coerceIn(0, 100)
             },
             onBands = { b -> levelBar.progress = (b.level * 100).toInt().coerceIn(0, 100) },
             onText = { text, saved ->
@@ -137,6 +202,7 @@ class DictationActivity : AppCompatActivity() {
 
     private fun showReview(text: String) {
         ticker.removeCallbacks(tick)
+        stopRecognizing()
         recordPanel.visibility = View.GONE
         reviewPanel.visibility = View.VISIBLE
         tvRecog.visibility = View.GONE
@@ -159,10 +225,12 @@ class DictationActivity : AppCompatActivity() {
             return
         }
         tvStatus.text = getString(R.string.dict_refining)
+        startInline(2)
         thread {
             try {
                 val out = TextRefiner.refine(tool, local.refinePrompt(), text)
                 runOnUiThread {
+                    stopInline()
                     beforeRefine = text
                     etText.setText(out)
                     etText.setSelection(out.length)
@@ -171,6 +239,7 @@ class DictationActivity : AppCompatActivity() {
                 }
             } catch (e: Exception) {
                 runOnUiThread {
+                    stopInline()
                     tvStatus.text = getString(R.string.dict_refine_failed, e.message ?: "")
                 }
             }
@@ -194,6 +263,7 @@ class DictationActivity : AppCompatActivity() {
             return
         }
         tvStatus.text = getString(R.string.dict_synthesizing)
+        startInline(3)
         thread {
             try {
                 val audio = TtsClient.synthesize(tts.baseUrl, tts.apiKey, tts.model, tts.voice, text)
@@ -204,11 +274,13 @@ class DictationActivity : AppCompatActivity() {
                     )
                 }
                 runOnUiThread {
+                    stopInline()
                     tvStatus.text = ""
                     player.play(audio.contentType, audio.bytes) {}
                 }
             } catch (e: Exception) {
                 runOnUiThread {
+                    stopInline()
                     tvStatus.text = getString(R.string.dict_read_failed, e.message ?: "")
                 }
             }

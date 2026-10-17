@@ -23,6 +23,8 @@ class DictationController(
     private val local: AudioSettings,
     private val store: VoiceStore,
     private val onState: (State) -> Unit,
+    /** 录音上传进度 0f..1f；1f = 送达，等服务端识别。 */
+    private val onProgress: (Float) -> Unit = {},
     private val onBands: (Spectrum.Bands) -> Unit,
     private val onText: (String, VoiceEntry?) -> Unit,
     private val onError: (String) -> Unit,
@@ -84,7 +86,12 @@ class DictationController(
                     return@execute
                 }
                 val wav = Wav.fromPcm16(pcm, pcm.size, SpeechInput.SAMPLE_RATE)
-                val text = AsrClient.transcribe(asr.baseUrl, asr.apiKey, asr.model, wav)
+                val text = AsrClient.transcribe(asr.baseUrl, asr.apiKey, asr.model, wav) { sent, total ->
+                    if (total > 0) {
+                        val p = sent.toFloat() / total
+                        post { onProgress(p) }
+                    }
+                }
                 Log.i(TAG, "dictation ASR → ${text.length} chars")
                 val entry = store.save(
                     bytes = wav,
