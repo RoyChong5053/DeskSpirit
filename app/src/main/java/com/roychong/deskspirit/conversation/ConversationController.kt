@@ -49,9 +49,11 @@ class ConversationController(
     /** 播放进度 0f..1f，用来推进字幕高亮。 */
     private val onSpeechProgress: (Float) -> Unit,
     private val onError: (String) -> Unit,
+    /** 非致命的提示（例如整理失败已回退原文），界面上用 Toast 即可。 */
+    private val onNotice: (String) -> Unit = {},
 ) {
 
-    enum class State { LISTENING, RECOGNIZING, THINKING, SPEAKING, PAUSED }
+    enum class State { LISTENING, RECOGNIZING, REFINING, THINKING, SPEAKING, PAUSED, LIVE_OFF }
 
     private val worker = Executors.newSingleThreadExecutor()
     private val main = Handler(Looper.getMainLooper())
@@ -70,6 +72,15 @@ class ConversationController(
     @Volatile private var busy = false
     @Volatile private var paused = false
 
+    /** App 是否在前台。后台只停麦，不打断正在进行的合成/播放。 */
+    @Volatile private var foreground = true
+
+    /** 是否正在播放 AI 语音（重播按钮据此变成「停止」）。 */
+    @Volatile private var speaking = false
+
+    /** 用户按了「停止」：这一轮不要再把字幕高亮推到结尾。 */
+    @Volatile private var stopRequested = false
+
     /** 最近一条 AI 语音（重放用）。 */
     @Volatile private var lastEntry: VoiceEntry? = null
 
@@ -79,6 +90,61 @@ class ConversationController(
     fun start() {
         if (released) return
         paused = false
+        if (local.liveEnabled()) startMic() else postState(State.LIVE_OFF)
+    }
+
+    /** 回前台：恢复 Live 拾音（Live 关着就只更新状态，不开麦）。 */
+    fun onForeground() {
+        foreground = true
+        if (released) return
+        if (!local.liveEnabled()) {
+            stopMic()
+            if (!busy && !paused) postState(State.LIVE_OFF)
+            return
+        }
+        if (!busy && !paused && input == null) startMic()
+    }
+
+    /**
+     * 切后台 / 锁屏：**只停麦**。
+     * TTS 合成和播放继续（一边刷别的 App 一边听角色说话是正常用法），
+     * 只有真正退出（onDestroy → release）才中断。
+     */
+    fun onBackground() {
+        foreground = false
+        stopMic()
+    }
+
+    /** 主屏 Live 开关。写进 prefs，重启/锁屏后保持。 */
+    fun setLive(on: Boolean) {
+        local.saveLiveEnabled(on)
+        if (on) {
+            if (!busy && !paused) startMic()
+        } else {
+            stopMic()
+            if (!busy) postState(State.LIVE_OFF)
+        }
+    }
+
+    fun isSpeaking(): Boolean = speaking
+
+    /** 播放中按「停止」：只停音频，本轮按正常收尾（回到待机/重新开麦）。 */
+    fun stopSpeaking(): Boolean {
+        if (!speaking) return false
+        stopRequested = true
+        player.stop()
+        speaking = false
+        return true
+    }
+
+    /** 一轮结束（正常或被停止）后：按 Live 设置决定是否重新开麦。 */
+    private fun afterTurn() {
+        if (released || paused) return
+        if (!local.liveEnabled()) {
+            postState(State.LIVE_OFF)
+            return
+        }
+        if (!foreground) return
         startMic()
     }
 
@@ -98,6 +164,8 @@ class ConversationController(
 
     fun togglePause() {
         if (busy) return
+        // Live 关着的时候没有麦可暂停/恢复，点球不做无效的状态切换
+        if (!local.liveEnabled()) return
         if (paused) {
             paused = false
             startMic()
@@ -122,6 +190,8 @@ class ConversationController(
 
     fun startMic() {
         if (input != null || released) return
+        // Live 关闭、或在后台，一律不开麦
+        if (!local.liveEnabled() || !foreground) return
         val si = SpeechInput(
             vad = local.vad(),
             onFrame = { bands, _ -> if (!busy) onBands(bands) },
@@ -158,12 +228,17 @@ class ConversationController(
 
     /** 重放最近一条 AI 语音（同样关麦防回声）。 */
     fun replayLast(): Boolean {
+        // 内存没有（切过后台、进程被回收、甚至重启）就退到语音库里最新一条 AI 语音，
+        // 用户按「重读」永远有东西可听，而不是弹「没有消息」。
+        val entry = lastEntry?.takeIf { it.hasAudio }
+            ?: store.list().firstOrNull { it.kind == VoiceKind.AI && it.hasAudio }
         val bytes: ByteArray
         val contentType: String
-        val fromEntry = lastEntry?.let { store.readBytes(it) }
+        val fromEntry = entry?.let { store.readBytes(it) }
         if (fromEntry != null) {
+            lastEntry = entry
             bytes = fromEntry
-            contentType = lastEntry!!.contentType
+            contentType = entry.contentType
         } else {
             val mem = lastAudio ?: return false
             contentType = mem.first
@@ -174,6 +249,7 @@ class ConversationController(
         stopMic()
         submit {
             try {
+                speaking = true
                 postState(State.SPEAKING)
                 player.play(
                     contentType = contentType,
@@ -185,8 +261,9 @@ class ConversationController(
             } catch (ex: Exception) {
                 Log.e(TAG, "replay failed", ex)
             } finally {
+                speaking = false
                 busy = false
-                post { if (!paused) startMic() }
+                post { afterTurn() }
             }
         }
         return true
@@ -212,7 +289,7 @@ class ConversationController(
             }
 
             // ---- 用户输入 ----
-            val userText: String
+            var userText: String
             if (presetText != null) {
                 userText = presetText
             } else {
@@ -238,6 +315,28 @@ class ConversationController(
                     }
                 }
                 Log.i(TAG, "ASR → $userText")
+
+                // Live 弱模型兜底：先把识别结果交给工具 LLM 整理，再进对话。
+                // 失败不阻断这一轮，直接用原文（云端强 ASR 可以关掉这个开关）。
+                if (local.liveRefine() && userText.isNotBlank()) {
+                    val tool = config.toolLlm()
+                    if (tool.configured) {
+                        postState(State.REFINING)
+                        val raw = userText
+                        val refined = runCatching {
+                            TextRefiner.refine(tool, local.refinePrompt(), raw)
+                        }.getOrNull()
+                        if (!refined.isNullOrBlank()) {
+                            userText = refined
+                            Log.i(TAG, "整理 → ${refined.length} chars（原文 ${raw.length}）")
+                        } else {
+                            Log.w(TAG, "整理失败，使用 ASR 原文")
+                            post { onNotice("整理失败，已用识别原文") }
+                        }
+                    } else {
+                        post { onNotice("工具 LLM 未配置，跳过整理") }
+                    }
+                }
             }
             post { onUserText(userText) }
 
@@ -302,6 +401,8 @@ class ConversationController(
             }
             lastAudio = audio.contentType to audio.bytes
 
+            speaking = true
+            stopRequested = false
             player.play(
                 contentType = audio.contentType,
                 bytes = audio.bytes,
@@ -311,7 +412,9 @@ class ConversationController(
                 },
                 onDone = {}
             )
-            post { onSpeechProgress(1f) }
+            speaking = false
+            // 被「停止」打断时，不要把整段字幕一次性高亮到结尾
+            if (!stopRequested) post { onSpeechProgress(1f) }
             Log.i(TAG, "playback done")
         } catch (e: Exception) {
             Log.e(TAG, "turn failed", e)
@@ -319,7 +422,7 @@ class ConversationController(
             post { onError(msg) }
         } finally {
             busy = false
-            post { if (!paused && !released) startMic() }
+            post { afterTurn() }
         }
     }
 

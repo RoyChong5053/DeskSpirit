@@ -12,6 +12,8 @@
     <string name="status_thinking">思考中…</string>
     <string name="status_thinking_fmt">思考中… %1$ds</string>
     <string name="status_speaking">说话中…</string>
+    <string name="status_refining_fmt">整理中… %1$ds</string>
+    <string name="status_live_off">Live 已关闭 · 用口述或点按钮开启</string>
     <string name="status_with_char_fmt">%1$s · %2$s</string>
 
     <string name="reply_placeholder">（AI 回复会显示在这里）</string>
@@ -19,12 +21,14 @@
 
     <!-- 主界面按钮 -->
     <string name="btn_replay">⟲ 重放</string>
+    <string name="btn_stop">■ 停止</string>
     <string name="btn_dictate">🎙 口述</string>
-    <string name="btn_library">🗂 语音库</string>
+    <string name="btn_live_on">◉ Live 开</string>
+    <string name="btn_live_off">○ Live 关</string>
     <string name="toast_nothing_to_replay">还没有可重放的语音</string>
 
     <!-- 设置 · 通用 -->
-    <string name="settings_subtitle">四个槽位各自独立配置，可云端/本地混搭。每页只显示自己的设置：Main 管对话角色与外观，工具 LLM 管整理 prompt，ASR 管收音，TTS 管语音库。</string>
+    <string name="settings_subtitle">四个槽位各自独立配置，可云端/本地混搭。每页只显示自己的设置：Main 管对话角色与外观，工具 LLM 管整理 prompt 与 Live 自动整理，ASR 管收音与语音库入口，TTS 管理解与合成。</string>
     <string name="sec_endpoint">端点</string>
     <string name="sec_endpoint_fmt">端点 · %1$s</string>
     <string name="slot_llm">Main</string>
@@ -107,6 +111,8 @@
 
     <!-- 设置 · 语音库 -->
     <string name="sec_library">语音库</string>
+    <string name="btn_open_library">打开语音库</string>
+    <string name="lib_entry_hint">录音存档、试听、导出都在这里（原主屏入口已移到本页）。</string>
     <string name="lib_save_ai">存档 AI 语音</string>
     <string name="lib_save_user">存档我的录音（Live）</string>
     <string name="lib_max_count">最多保留条数 (0=不限)</string>
@@ -115,6 +121,8 @@
 
     <!-- 设置 · 整理 -->
     <string name="sec_refine">整理 prompt</string>
+    <string name="live_refine_on">Live 拾音后自动整理</string>
+    <string name="live_refine_hint">ASR 出结果后先交给工具 LLM 整理，再进对话。本地 whisper / 小模型建议开；云端强 ASR 就不必。整理失败会自动回退到识别原文。</string>
     <string name="hint_tool_llm">整理口述用的。必须是普通 OpenAI 兼容端点（不支持 TavernLab 模式），例如本地 llama.cpp。prompt 就是下面这个模板。</string>
 
     <!-- 口述页 -->

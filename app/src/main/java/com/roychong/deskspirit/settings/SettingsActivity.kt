@@ -25,6 +25,7 @@ import com.roychong.deskspirit.config.VadParams
 import com.roychong.deskspirit.net.ApiTester
 import com.roychong.deskspirit.net.TavernLabClient
 import com.roychong.deskspirit.render.SphereStyle
+import com.roychong.deskspirit.voice.VoiceLibraryActivity
 import com.roychong.deskspirit.voice.VoiceStore
 import kotlin.concurrent.thread
 
@@ -89,6 +90,7 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var tvLibPath: TextView
 
     private lateinit var etRefinePrompt: EditText
+    private lateinit var swLiveRefine: Switch
 
     private class SlotState(val list: MutableList<Endpoint>, var active: Int)
 
@@ -150,6 +152,10 @@ class SettingsActivity : AppCompatActivity() {
         tvLibPath = findViewById(R.id.tvLibPath)
 
         etRefinePrompt = findViewById(R.id.etRefinePrompt)
+        swLiveRefine = findViewById(R.id.swLiveRefine)
+        findViewById<Button>(R.id.btnOpenLibrary).setOnClickListener {
+            startActivity(android.content.Intent(this, VoiceLibraryActivity::class.java))
+        }
 
         slotButtons = mapOf(
             Slot.LLM_DIALOG to findViewById(R.id.slotLlm),
@@ -536,6 +542,7 @@ class SettingsActivity : AppCompatActivity() {
         etMaxCount.setText(local.voiceMaxCount().toString())
         etMaxDays.setText(local.voiceMaxDays().toString())
         etRefinePrompt.setText(local.refinePrompt())
+        swLiveRefine.isChecked = local.liveRefine()
 
         tvLibPath.text = getString(R.string.lib_path_fmt, VoiceStore(this).dir.absolutePath)
 
@@ -578,6 +585,7 @@ class SettingsActivity : AppCompatActivity() {
             maxDays = etMaxDays.i(30).coerceAtLeast(0),
         )
         local.saveRefinePrompt(etRefinePrompt.text.toString())
+        local.saveLiveRefine(swLiveRefine.isChecked)
         local.saveSphereStyle(SphereStyle.entries[spStyle.selectedItemPosition.coerceIn(
             0, SphereStyle.entries.size - 1
         )].id)

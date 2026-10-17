@@ -6,6 +6,7 @@ import android.util.Log
 import java.nio.ByteBuffer
 import java.nio.ByteOrder
 import java.nio.FloatBuffer
+import kotlin.math.exp
 import javax.microedition.khronos.egl.EGLConfig
 import javax.microedition.khronos.opengles.GL10
 
@@ -92,13 +93,20 @@ class SphereRenderer : GLSurfaceView.Renderer {
 
         val t = (System.nanoTime() - startNs) / 1_000_000_000f
 
+        // 音频包络用的帧间隔（GL 线程每帧都会进来）
+        val nowNs = System.nanoTime()
+        if (lastFrameNs != 0L) {
+            frameDtMs = ((nowNs - lastFrameNs) / 1_000_000f).coerceIn(1f, 100f)
+        }
+        lastFrameNs = nowNs
+
         GLES30.glUseProgram(program)
         GLES30.glUniform2f(uRes, viewW.toFloat(), viewH.toFloat())
         GLES30.glUniform1f(uTime, t)
-        GLES30.glUniform1f(uLevel, smooth(0, level, SMOOTH_LEVEL))
-        GLES30.glUniform1f(uBass, smooth(1, bass, SMOOTH_BASS))
-        GLES30.glUniform1f(uMid, smooth(2, mid, SMOOTH_MID))
-        GLES30.glUniform1f(uTreble, smooth(3, treble, SMOOTH_TREBLE))
+        GLES30.glUniform1f(uLevel, smooth(0, level))
+        GLES30.glUniform1f(uBass, smooth(1, bass))
+        GLES30.glUniform1f(uMid, smooth(2, mid))
+        GLES30.glUniform1f(uTreble, smooth(3, treble))
 
         if (aPos >= 0) {
             GLES30.glBindBuffer(GLES30.GL_ARRAY_BUFFER, quad)
@@ -144,11 +152,34 @@ class SphereRenderer : GLSurfaceView.Renderer {
         return PROLOGUE + body
     }
 
-    // 简单的时间平滑，避免频段跳动太生硬
+    // ---- 音频包络 ----
+
+    /** 上一帧时间，用来把平滑系数换算成「固定毫秒」。 */
+    private var lastFrameNs = 0L
+    private var frameDtMs = 16f
+
+    /**
+     * 起音 / 释放时间常数（毫秒）。
+     *
+     * 以前是按帧乘系数（treble 每帧 0.28，约 5 帧就满）——
+     * 麦克风 20ms 一帧的噪声会原样传到画面上，看起来像在"振动"。
+     * 改成固定毫秒的非对称包络后：说话瞬间仍然有反应，收尾却是慢慢落下去。
+     */
+    private val attackMs = floatArrayOf(45f, 25f, 40f, 55f)
+    private val releaseMs = floatArrayOf(320f, 260f, 320f, 480f)
+
+    /** 噪声门：低于它的输入直接当环境底噪，不让球体乱晃。 */
+    private val gate = floatArrayOf(0.04f, 0.05f, 0.035f, 0.045f)
+
     private val smoothed = FloatArray(4)
-    private fun smooth(index: Int, target: Float, k: Float): Float {
-        smoothed[index] = smoothed[index] + (target - smoothed[index]) * k
-        return smoothed[index].coerceIn(0f, 2f)
+
+    private fun smooth(index: Int, targetRaw: Float): Float {
+        val target = if (targetRaw < gate[index]) 0f else targetRaw
+        val cur = smoothed[index]
+        val tau = if (target > cur) attackMs[index] else releaseMs[index]
+        val k = 1f - exp(-frameDtMs / tau)
+        smoothed[index] = (cur + (target - cur) * k).coerceIn(0f, 1.5f)
+        return smoothed[index]
     }
 
     private fun buildProgram(vs: String, fs: String): Int {
@@ -185,10 +216,6 @@ class SphereRenderer : GLSurfaceView.Renderer {
 
     companion object {
         private const val TAG = "SphereRenderer"
-        private const val SMOOTH_LEVEL = 0.05f
-        private const val SMOOTH_BASS = 0.12f
-        private const val SMOOTH_MID = 0.18f
-        private const val SMOOTH_TREBLE = 0.28f
 
         private val VERTEX_SRC = """
 #version 300 es
@@ -292,28 +319,28 @@ void main() {
             float ti = t0 + dt * (float(i) + 0.5);
             vec3 p = ro + rd * ti;
             vec3 q = p * 1.6;
-            q.y += 1.2 * sin(t * 0.25);
-            q.xz += 0.30 * vec2(sin(t * 0.40 + uBass * 3.0), cos(t * 0.30 + uMid * 2.0));
-            float d = fbm(q + vec3(0.0, 1.0 * sin(t * 0.15), 0.0));
+            q.y += 1.2 * sin(t * 0.18);
+            q.xz += 0.30 * vec2(sin(t * 0.22 + uBass * 2.0), cos(t * 0.16 + uMid * 1.5));
+            float d = fbm(q + vec3(0.0, 1.0 * sin(t * 0.12), 0.0));
             d = smoothstep(0.46, 0.95, d);
-            d *= (0.30 + 0.90 * uMid + 1.10 * uBass);
+            d *= (0.30 + 0.65 * uMid + 0.75 * uBass);
             d *= exp(-dot(p, p) * 0.7);
             d = clamp(d, 0.0, 1.0);
             if (d > 0.002) {
                 vec3 cNear = vec3(0.15, 0.70, 1.00);
                 vec3 cFar  = vec3(0.45, 0.20, 0.95);
                 vec3 tint = mix(cNear, cFar, clamp(length(p) * 0.7, 0.0, 1.0));
-                tint += vec3(0.35, 0.85, 1.0) * uTreble * 0.6;
+                tint += vec3(0.35, 0.85, 1.0) * uTreble * 0.30;
                 acc += trans * dt * d * tint;
                 trans *= (1.0 - dt * d * 0.7);
             }
         }
 
         col = mix(vec3(0.02, 0.05, 0.10), vec3(0.05, 0.14, 0.26), fres) + acc * 0.9;
-        col += vec3(0.15, 0.65, 1.00) * fres * (0.40 + 1.0 * uTreble);
+        col += vec3(0.15, 0.65, 1.00) * fres * (0.40 + 0.45 * uTreble);
 
         vec3 L = normalize(vec3(0.5, 0.8, 0.6));
-        col += vec3(1.0) * pow(max(dot(reflect(-rd, n), L), 0.0), 64.0) * (0.25 + 0.7 * uTreble);
+        col += vec3(1.0) * pow(max(dot(reflect(-rd, n), L), 0.0), 64.0) * (0.25 + 0.35 * uTreble);
     }
 
     fragColor = vec4(finish(col, P), 1.0);
@@ -467,8 +494,8 @@ void main() {
     float h = 0.0;
     for (int i = 0; i < 3; i++) {
         float fi = float(i);
-        float k = 46.0 + 26.0 * fi;
-        float sp = 6.0 + 3.0 * fi * (1.0 + 0.8 * uBass);
+        float k = 32.0 + 16.0 * fi;
+        float sp = 3.2 + 1.6 * fi * (1.0 + 0.5 * uBass);
         h += sin(k * rw - t * sp) / (1.0 + 1.8 * fi);
     }
     float ripple = h * 0.55;
@@ -476,11 +503,11 @@ void main() {
     float trough = pow(max(-ripple, 0.0), 2.2);
 
     vec3 c = mix(vec3(0.15, 0.45, 0.90), vec3(0.55, 1.00, 0.98), crest);
-    col += crest * c * (0.90 + 1.40 * uLevel + 0.90 * uBass);
+    col += crest * c * (0.75 + 0.85 * uLevel + 0.55 * uBass);
     col -= trough * vec3(0.05, 0.10, 0.16) * (1.0 + uLevel);
 
     // 环形岸线与中心球核
-    col += exp(-abs(r - R0) * 16.0) * vec3(0.30, 0.80, 1.00) * (0.35 + 0.90 * uTreble);
+    col += exp(-abs(r - R0) * 16.0) * vec3(0.30, 0.80, 1.00) * (0.35 + 0.45 * uTreble);
     col += vec3(0.45, 0.90, 1.00) * exp(-r * 11.0) * (0.60 + 1.20 * uLevel + 0.5 * uMid);
 
     fragColor = vec4(finish(col, P), 1.0);
@@ -494,14 +521,14 @@ void main() {
     vec2 P = ballP();
     float r = length(P);
 
-    float breath = 0.5 + 0.5 * sin(uTime * 0.9);
+    float breath = 0.5 + 0.5 * sin(uTime * 0.75);
     float puls = 0.55 + 0.45 * uLevel;
 
-    float R = R0 * (1.0 + 0.18 * breath + 0.50 * uLevel + 0.32 * uBass);
+    float R = R0 * (1.0 + 0.14 * breath + 0.30 * uLevel + 0.18 * uBass);
 
     vec3 col = vec3(0.006, 0.010, 0.020);
     col += vec3(0.06, 0.30, 0.45) * exp(-max(r - R, 0.0) * 7.0) * puls;
-    col += vec3(0.30, 0.80, 1.00) * exp(-abs(r - R) * 22.0) * (0.60 + 0.90 * uTreble);
+    col += vec3(0.30, 0.80, 1.00) * exp(-abs(r - R) * 22.0) * (0.60 + 0.55 * uTreble);
     col += vec3(0.05, 0.12, 0.22) * exp(-r * 3.4) * puls;
     col += vec3(0.35, 0.75, 1.00) * exp(-r * 16.0) * (0.30 + 0.9 * uMid);
 

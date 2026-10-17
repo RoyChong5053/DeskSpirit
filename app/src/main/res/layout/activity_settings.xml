@@ -267,6 +267,22 @@
 
             <TextView style="@style/SectionTitle" android:text="@string/sec_refine" />
 
+            <Switch
+                android:id="@+id/swLiveRefine"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/live_refine_on"
+                android:textColor="@color/text_primary"
+                android:textSize="14sp" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="2dp"
+                android:text="@string/live_refine_hint"
+                android:textColor="@color/text_secondary"
+                android:textSize="12sp" />
+
             <EditText
                 android:id="@+id/etRefinePrompt"
                 android:layout_width="match_parent"
@@ -358,6 +374,22 @@
                 android:text="@string/lib_save_user"
                 android:textColor="@color/text_primary"
                 android:textSize="14sp" />
+
+            <TextView style="@style/SectionTitle" android:text="@string/sec_library" />
+
+            <Button
+                android:id="@+id/btnOpenLibrary"
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:text="@string/btn_open_library" />
+
+            <TextView
+                android:layout_width="match_parent"
+                android:layout_height="wrap_content"
+                android:layout_marginTop="4dp"
+                android:text="@string/lib_entry_hint"
+                android:textColor="@color/text_secondary"
+                android:textSize="12sp" />
         </LinearLayout>
 
         <!-- ============ TTS 页：语音库 ============ -->

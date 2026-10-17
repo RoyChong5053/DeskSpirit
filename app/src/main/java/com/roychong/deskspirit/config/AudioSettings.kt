@@ -89,6 +89,33 @@ class AudioSettings(context: Context) {
         .putInt(KV_TTS_TIMEOUT, sec.coerceIn(10, 3600))
         .apply()
 
+    // ---- Live（常驻监听）----
+
+    /**
+     * Live 模式：开着就自动开麦、等 VAD 切句；关掉就完全不拾音（只剩口述页）。
+     *
+     * 这个值必须跨进程/重启保持：用户在嘈杂环境里关掉它，下次打开 App
+     * 大概率还是同一个环境，不能一启动就自动开麦乱听。
+     */
+    fun liveEnabled(): Boolean = sp.getBoolean(KV_LIVE, true)
+
+    fun saveLiveEnabled(on: Boolean) = sp.edit()
+        .putBoolean(KV_LIVE, on)
+        .apply()
+
+    // ---- Live 自动整理 ----
+
+    /**
+     * Live 拾音出一条 ASR 文本后，是否先交给工具 LLM 整理再进对话。
+     *
+     * 云端强 ASR 一般不需要；本地 whisper / 小模型错字多，整理一下对话质量差很多。
+     */
+    fun liveRefine(): Boolean = sp.getBoolean(KV_LIVE_REFINE, false)
+
+    fun saveLiveRefine(on: Boolean) = sp.edit()
+        .putBoolean(KV_LIVE_REFINE, on)
+        .apply()
+
     // ---- 语音库 ----
 
     /** 是否把 TTS 生成的语音存档。 */
@@ -156,6 +183,9 @@ class AudioSettings(context: Context) {
 
         private const val KV_ASR_TIMEOUT = "asr_timeout_s"
         private const val KV_TTS_TIMEOUT = "tts_timeout_s"
+
+        private const val KV_LIVE = "live_enabled"
+        private const val KV_LIVE_REFINE = "live_refine"
 
         private const val KV_SAVE_VOICE = "voice_save_ai"
         private const val KV_SAVE_USER = "voice_save_user"

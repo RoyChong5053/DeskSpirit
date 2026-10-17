@@ -121,9 +121,9 @@
                 android:text="@string/btn_dictate" />
 
             <Button
-                android:id="@+id/btnLibrary"
+                android:id="@+id/btnLive"
                 style="@style/BarButton"
-                android:text="@string/btn_library" />
+                android:text="@string/btn_live_on" />
         </LinearLayout>
     </LinearLayout>
 

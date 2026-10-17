@@ -64,9 +64,15 @@ class Spectrum(private val size: Int = 1024) {
 
     /** 自适应峰值归一化：让各频段稳定落在 0..1，不随环境音量漂移。 */
     private fun norm(index: Int, v: Float): Float {
-        peak[index] = max(peak[index] * 0.90f, v)
+        // 绝对底噪：安静时的电流声/风扇声不该被"归一化"放大成满格。
+        val floor = if (index == 0) 0.006f else 0.004f
+        val x = if (v < floor) 0f else v - floor
+
+        // 峰值衰减必须慢：以前每帧 ×0.90，1 秒就掉到 0.5%，
+        // 等于一直在拿"当下这点小声"当满格，球体自然跟着环境噪声乱抖。
+        peak[index] = max(peak[index] * 0.994f, x)
         val p = if (peak[index] < 1e-3f) 1e-3f else peak[index]
-        return (v / p).coerceIn(0f, 1f)
+        return (x / p).coerceIn(0f, 1f)
     }
 
     /** 迭代式 radix-2 FFT（原地）。 */

@@ -26,7 +26,6 @@ import com.roychong.deskspirit.net.TavernLabClient
 import com.roychong.deskspirit.render.SphereStyle
 import com.roychong.deskspirit.render.SphereView
 import com.roychong.deskspirit.settings.SettingsActivity
-import com.roychong.deskspirit.voice.VoiceLibraryActivity
 import com.roychong.deskspirit.voice.VoiceStore
 import kotlin.concurrent.thread
 
@@ -50,6 +49,8 @@ class MainActivity : AppCompatActivity() {
     private lateinit var tvUser: TextView
     private lateinit var tvReply: TextView
     private lateinit var replyScroll: ScrollView
+    private lateinit var btnReplay: android.widget.Button
+    private lateinit var btnLive: android.widget.Button
 
     private var controller: ConversationController? = null
 
@@ -125,6 +126,8 @@ class MainActivity : AppCompatActivity() {
         tvUser = findViewById(R.id.tvUser)
         tvReply = findViewById(R.id.tvReply)
         replyScroll = findViewById(R.id.replyScroll)
+        btnReplay = findViewById(R.id.btnReplay)
+        btnLive = findViewById(R.id.btnLive)
 
         dimColor = ContextCompat.getColor(this, R.color.text_dim)
         hotColor = ContextCompat.getColor(this, R.color.accent)
@@ -132,18 +135,27 @@ class MainActivity : AppCompatActivity() {
         findViewById<ImageButton>(R.id.btnSettings).setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
-        findViewById<View>(R.id.btnReplay).setOnClickListener {
-            if (controller?.replayLast() != true) {
+        btnReplay.setOnClickListener {
+            // 播放中 → 停止；播放完 → 重读
+            if (controller?.isSpeaking() == true) {
+                controller?.stopSpeaking()
+                updateReplayButton(speaking = false)
+            } else if (controller?.replayLast() != true) {
                 Toast.makeText(this, getString(R.string.toast_nothing_to_replay), Toast.LENGTH_SHORT).show()
             }
+        }
+        btnLive.setOnClickListener {
+            val on = !local.liveEnabled()
+            local.saveLiveEnabled(on)
+            controller?.setLive(on)
+            updateLiveButton()
         }
         findViewById<View>(R.id.btnDictate).setOnClickListener {
             startActivityForResult(Intent(this, DictationActivity::class.java), REQ_DICTATE)
         }
-        findViewById<View>(R.id.btnLibrary).setOnClickListener {
-            startActivity(Intent(this, VoiceLibraryActivity::class.java))
-        }
         sphere.setOnClickListener { controller?.togglePause() }
+
+        updateLiveButton()
 
         ensureMicPermission()
     }
@@ -207,7 +219,8 @@ class MainActivity : AppCompatActivity() {
             onError = { msg ->
                 clearReply()
                 tvReply.text = "⚠️ $msg"
-            }
+            },
+            onNotice = { msg -> Toast.makeText(this, msg, Toast.LENGTH_SHORT).show() }
         )
         c.start()
         controller = c
@@ -331,6 +344,10 @@ class MainActivity : AppCompatActivity() {
             ConversationController.State.THINKING ->
                 startBusy(R.string.status_thinking_fmt, -1)
 
+            // Live 弱模型：识别完先让工具 LLM 整理，同样要有秒数
+            ConversationController.State.REFINING ->
+                startBusy(R.string.status_refining_fmt, -1)
+
             else -> {
                 stopBusy()
                 tvStatus.text = statusLine(
@@ -339,12 +356,15 @@ class MainActivity : AppCompatActivity() {
                             ConversationController.State.LISTENING -> R.string.status_listening
                             ConversationController.State.PAUSED -> R.string.status_paused
                             ConversationController.State.SPEAKING -> R.string.status_speaking
+                            ConversationController.State.LIVE_OFF -> R.string.status_live_off
                             else -> R.string.status_listening
                         }
                     )
                 )
             }
         }
+        updateReplayButton(speaking = state == ConversationController.State.SPEAKING)
+        updateLiveButton()
         when (state) {
             ConversationController.State.RECOGNIZING -> {
                 clearReply()
@@ -360,6 +380,8 @@ class MainActivity : AppCompatActivity() {
         // 设置页可能刚换了外观 / 角色，回来时重新取一次
         sphere.setStyle(SphereStyle.of(local.sphereStyle()))
         startController()
+        controller?.onForeground()
+        updateLiveButton()
         syncCurrentChar()
     }
 
@@ -390,9 +412,25 @@ class MainActivity : AppCompatActivity() {
     override fun onPause() {
         ticker.removeCallbacks(tick)
         sphere.onPause()
+        // 只关麦、不释放：切后台/锁屏时 TTS 继续合成、继续播放。
+        controller?.onBackground()
+        super.onPause()
+    }
+
+    override fun onDestroy() {
         controller?.release()
         controller = null
-        super.onPause()
+        super.onDestroy()
+    }
+
+    private fun updateReplayButton(speaking: Boolean) {
+        btnReplay.text = getString(if (speaking) R.string.btn_stop else R.string.btn_replay)
+    }
+
+    private fun updateLiveButton() {
+        val on = local.liveEnabled()
+        btnLive.text = getString(if (on) R.string.btn_live_on else R.string.btn_live_off)
+        btnLive.alpha = if (on) 1f else 0.55f
     }
 
     companion object {
