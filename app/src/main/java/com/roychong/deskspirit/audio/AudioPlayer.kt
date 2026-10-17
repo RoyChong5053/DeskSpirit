@@ -41,8 +41,18 @@ class AudioPlayer(private val context: Context) {
         }
     }
 
+    /** 简版：只要播完的通知（语音库重放用）。 */
+    fun play(contentType: String, bytes: ByteArray, onDone: () -> Unit) =
+        play(contentType, bytes, {}, { _, _ -> }, onDone)
+
     fun stop() {
         stopped = true
+    }
+
+    /** 供外部把 PCM 包成 WAV 时复用（语音库落盘用）。 */
+    fun isPcm(contentType: String): Boolean {
+        val t = contentType.lowercase()
+        return t.contains("pcm") || t.contains("l16") || t.contains("wave")
     }
 
     private fun playPcm(
@@ -157,15 +167,16 @@ class AudioPlayer(private val context: Context) {
         onDone()
     }
 
-    private fun parseRate(contentType: String): Int? {
-        val m = Regex("rate=(\\d+)").find(contentType) ?: return null
-        return m.groupValues[1].toIntOrNull()
-    }
-
     fun audioManager(): AudioManager =
         context.getSystemService(Context.AUDIO_SERVICE) as AudioManager
 
     companion object {
         private const val TAG = "AudioPlayer"
+
+        /** 从 `audio/pcm;rate=24000` 这类 contentType 里取采样率。 */
+        fun parseRate(contentType: String): Int? {
+            val m = Regex("rate=(\\d+)").find(contentType) ?: return null
+            return m.groupValues[1].toIntOrNull()
+        }
     }
 }

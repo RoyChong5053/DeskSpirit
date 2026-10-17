@@ -5,18 +5,22 @@ import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
 import android.util.Log
+import com.roychong.deskspirit.config.VadParams
 import kotlin.math.max
 
 /**
  * 常驻麦克风监听（旧手机上唯一保留的"重活"）：
  *
  *  - 每帧输出频段能量 → 驱动 3D 圆球
- *  - 用「噪声地板 + 静音时长」做端点检测（VAD），一句话说完就切出音频段
+ *  - Live 模式：用「噪声地板 + 静音时长」做端点检测（VAD），一句话说完就切出音频段
+ *  - 口述模式（[autoEndpoint] = false）：只累积，不自动切句，由调用方 [stopAndCollect]
  *
- * 思路沿用 MNN TaoAvatar 的收音逻辑：安静时不乱触发（阈值跟着底噪走），
- * 说完一段静音（约 0.9s）就认为这一轮结束，最长 15s 强制截断。
+ * 参数全部来自 [VadParams]，可在设置页调整。
  */
 class SpeechInput(
+    private val vad: VadParams = VadParams(),
+    /** true = Live（自动切句回调 [onUtterance]）；false = 口述（只累积，等 [stopAndCollect]）。 */
+    private val autoEndpoint: Boolean = true,
     private val onFrame: (Spectrum.Bands, Boolean) -> Unit,
     private val onUtterance: (ShortArray) -> Unit,
 ) {
@@ -27,15 +31,21 @@ class SpeechInput(
 
     private val spectrum = Spectrum(FRAME)
 
+    private val maxSamples = SAMPLE_RATE * vad.maxSpeechMs / 1000
+    private val minSpeechSamples = SAMPLE_RATE * vad.minSpeechMs / 1000
+
     // ---- VAD 状态 ----
     private var noiseFloor = 0.002f
     private var inSpeech = false
     private var silenceFrames = 0
     private var voicedFrames = 0
-    private val buffer = ShortArray(MAX_SAMPLES)
+    private val buffer = ShortArray(maxSamples)
     private var length = 0
 
     val isRunning: Boolean get() = running
+
+    /** 已采集的毫秒数。 */
+    val collectedMs: Int get() = length * 1000 / SAMPLE_RATE
 
     @SuppressLint("MissingPermission")
     fun start(): Boolean {
@@ -67,6 +77,7 @@ class SpeechInput(
 
         inSpeech = false
         silenceFrames = 0
+        voicedFrames = 0
         length = 0
 
         record = rec
@@ -88,6 +99,17 @@ class SpeechInput(
         record = null
     }
 
+    /** 口述模式用：停止并取回整段录音（undefined → null）。 */
+    fun stopAndCollect(): ShortArray? {
+        if (!running) return null
+        stop()
+        if (length <= 0) return null
+        val out = ShortArray(length)
+        System.arraycopy(buffer, 0, out, 0, length)
+        length = 0
+        return out
+    }
+
     private fun loop(rec: AudioRecord) {
         val frame = ShortArray(FRAME)
         while (running) {
@@ -103,10 +125,17 @@ class SpeechInput(
             } else {
                 noiseFloor + (level - noiseFloor) * 0.0008f
             }
-            val voice = level > max(MIN_LEVEL, noiseFloor * VOICE_RATIO)
+            val voice = level > max(vad.minLevel, noiseFloor * vad.voiceRatio)
 
             onFrame(bands, voice || inSpeech)
-            updateVad(frame, n, voice)
+
+            if (autoEndpoint) {
+                updateVad(frame, n, voice)
+            } else {
+                // 口述：一律累积，不做端点判断
+                append(frame, n)
+                if (voice) voicedFrames++
+            }
         }
     }
 
@@ -131,8 +160,8 @@ class SpeechInput(
             silenceFrames++
         }
 
-        val tooLong = length >= MAX_SAMPLES
-        val ended = silenceFrames * FRAME_MS >= END_SILENCE_MS
+        val tooLong = length >= maxSamples
+        val ended = silenceFrames * FRAME_MS >= vad.endSilenceMs
         if (ended || tooLong) {
             inSpeech = false
 
@@ -140,12 +169,13 @@ class SpeechInput(
             val totalFrames = if (length > 0) length / FRAME else 0
             val voicedMs = voicedFrames * FRAME_MS
             val voicedRatio = if (totalFrames > 0) voicedFrames.toFloat() / totalFrames else 0f
-            val keep = length >= MIN_SPEECH_SAMPLES && voicedMs >= MIN_VOICED_MS && voicedRatio >= MIN_VOICED_RATIO
+            val keep = length >= minSpeechSamples && voicedMs >= vad.minVoicedMs &&
+                voicedRatio >= vad.minVoicedRatio
 
             if (keep) {
                 // 掐掉尾部多余静音（留 ~200ms）
                 val trimFrames = (silenceFrames - 6).coerceAtLeast(0)
-                val outLen = (length - trimFrames * FRAME).coerceAtLeast(MIN_SPEECH_SAMPLES)
+                val outLen = (length - trimFrames * FRAME).coerceAtLeast(minSpeechSamples)
                 val out = ShortArray(outLen)
                 System.arraycopy(buffer, 0, out, 0, outLen)
                 onUtterance(out)
@@ -155,7 +185,7 @@ class SpeechInput(
     }
 
     private fun append(frame: ShortArray, n: Int) {
-        val room = MAX_SAMPLES - length
+        val room = maxSamples - length
         val copy = if (n < room) n else room
         if (copy > 0) {
             System.arraycopy(frame, 0, buffer, length, copy)
@@ -171,22 +201,5 @@ class SpeechInput(
         /** 每帧 32ms，既能驱动 30fps 的渲染，也够 FFT 用。 */
         private const val FRAME = 512
         private const val FRAME_MS = 32
-
-        private const val END_SILENCE_MS = 900
-        private const val MIN_SPEECH_MS = 250
-        private const val MAX_SPEECH_MS = 15000
-
-        private const val MAX_SAMPLES = SAMPLE_RATE * MAX_SPEECH_MS / 1000
-        private const val MIN_SPEECH_SAMPLES = SAMPLE_RATE * MIN_SPEECH_MS / 1000
-
-        /** 一段话至少要有这么多毫秒是“真·有声”，否则当噪声丢弃。 */
-        private const val MIN_VOICED_MS = 320
-        /** 有声帧占整段的比例下限。 */
-        private const val MIN_VOICED_RATIO = 0.30f
-
-        /** 绝对门限（RMS）。环境底噪一般远低于它，正常说话远高于它。 */
-        private const val MIN_LEVEL = 0.012f
-        /** 相对门限：比噪声地板高这么多倍才算有人说话。 */
-        private const val VOICE_RATIO = 3.0f
     }
 }

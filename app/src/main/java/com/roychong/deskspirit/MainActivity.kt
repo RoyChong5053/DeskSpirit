@@ -19,9 +19,12 @@ import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
 import com.roychong.deskspirit.config.ApiConfig
+import com.roychong.deskspirit.config.AudioSettings
 import com.roychong.deskspirit.conversation.ConversationController
 import com.roychong.deskspirit.render.SphereView
 import com.roychong.deskspirit.settings.SettingsActivity
+import com.roychong.deskspirit.voice.VoiceLibraryActivity
+import com.roychong.deskspirit.voice.VoiceStore
 
 /**
  * v0.1 主界面：上半屏音频驱动 3D 圆球，下半屏文字输出。
@@ -44,6 +47,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var replyScroll: ScrollView
 
     private var controller: ConversationController? = null
+
+    /** 从口述页带回、等待发送给伙伴的文本（onActivityResult 早于 onResume）。 */
+    private var pendingSendText: String? = null
 
     // ---- KTV 字幕 ----
     private var speechText = ""
@@ -85,6 +91,17 @@ class MainActivity : AppCompatActivity() {
         findViewById<ImageButton>(R.id.btnSettings).setOnClickListener {
             startActivity(Intent(this, SettingsActivity::class.java))
         }
+        findViewById<View>(R.id.btnReplay).setOnClickListener {
+            if (controller?.replayLast() != true) {
+                Toast.makeText(this, getString(R.string.toast_nothing_to_replay), Toast.LENGTH_SHORT).show()
+            }
+        }
+        findViewById<View>(R.id.btnDictate).setOnClickListener {
+            startActivityForResult(Intent(this, DictationActivity::class.java), REQ_DICTATE)
+        }
+        findViewById<View>(R.id.btnLibrary).setOnClickListener {
+            startActivity(Intent(this, VoiceLibraryActivity::class.java))
+        }
         sphere.setOnClickListener { controller?.togglePause() }
 
         ensureMicPermission()
@@ -124,6 +141,8 @@ class MainActivity : AppCompatActivity() {
         val c = ConversationController(
             context = this,
             config = ApiConfig(this),
+            local = AudioSettings(this),
+            store = VoiceStore(this),
             onState = { renderState(it) },
             onBands = { b -> sphere.pushAudio(b.level, b.bass, b.mid, b.treble) },
             onUserText = { text ->
@@ -140,6 +159,23 @@ class MainActivity : AppCompatActivity() {
         )
         c.start()
         controller = c
+
+        pendingSendText?.let { t ->
+            pendingSendText = null
+            c.sendText(t)
+        }
+    }
+
+    override fun onActivityResult(requestCode: Int, resultCode: Int, data: Intent?) {
+        super.onActivityResult(requestCode, resultCode, data)
+        if (requestCode == REQ_DICTATE && resultCode == RESULT_OK) {
+            val text = data?.getStringExtra(DictationActivity.EXTRA_TEXT).orEmpty()
+            if (text.isNotBlank()) {
+                // onActivityResult 早于 onResume，controller 可能还没建，先存起来
+                if (controller == null) pendingSendText = text
+                else controller?.sendText(text)
+            }
+        }
     }
 
     // ---------------- 文字区 ----------------
@@ -268,5 +304,6 @@ class MainActivity : AppCompatActivity() {
 
     companion object {
         private const val REQ_MIC = 1001
+        private const val REQ_DICTATE = 1002
     }
 }

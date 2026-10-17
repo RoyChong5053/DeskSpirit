@@ -13,18 +13,102 @@
     <string name="reply_placeholder">（AI 回复会显示在这里）</string>
     <string name="cd_settings">设置</string>
 
-    <!-- settings -->
-    <string name="sec_llm">LLM 对话</string>
-    <string name="sec_asr">ASR 语音识别</string>
-    <string name="sec_tts">TTS 语音合成</string>
+    <!-- 主界面按钮 -->
+    <string name="btn_replay">⟲ 重放</string>
+    <string name="btn_dictate">🎙 口述</string>
+    <string name="btn_library">🗂 语音库</string>
+    <string name="toast_nothing_to_replay">还没有可重放的语音</string>
+
+    <!-- 设置 · 通用 -->
+    <string name="settings_subtitle">四个槽位各自独立配置，可云端/本地混搭（如 ASR 本地、TTS 云端）。每个槽位可存多组 profile 并切换当前使用的。</string>
+    <string name="sec_endpoint">端点</string>
+    <string name="sec_endpoint_fmt">端点 · %1$s</string>
+    <string name="slot_llm">LLM 对话</string>
+    <string name="slot_tool">工具 LLM</string>
+    <string name="slot_asr">ASR</string>
+    <string name="slot_tts">TTS</string>
+
     <string name="hint_base_url">Base URL（域名 / …/v1 / 完整端点 都行）</string>
     <string name="hint_api_key">API Key</string>
     <string name="hint_model">Model</string>
     <string name="hint_voice">Voice（TTS 用）</string>
     <string name="label_tavernlab_mode">TavernLab 模式（服务端管上下文 / 记忆）</string>
-    <string name="hint_tavernlab">开：Base 填 http://192.168.100.78:8888/v1，Key 填 TavernLab 的 app_token；只发当前一句，角色卡与 RAG 记忆由服务端负责。关：普通 OpenAI 兼容端点，客户端自带历史。</string>
     <string name="btn_test">测试</string>
     <string name="btn_save">保存</string>
     <string name="saved">已保存</string>
     <string name="testing">测试中…</string>
+
+    <string name="prof_add">＋</string>
+    <string name="prof_dup">复制</string>
+    <string name="prof_del">删除</string>
+    <string name="prof_new">新配置 %1$d</string>
+    <string name="prof_copy">%1$s 副本</string>
+    <string name="prof_rename">重命名 profile</string>
+    <string name="prof_keep_one">至少保留一个 profile</string>
+
+    <string name="btn_pull_models">拉取模型</string>
+    <string name="pulling">拉取中…</string>
+    <string name="pick_model">选择模型</string>
+
+    <!-- 设置 · 收音 -->
+    <string name="sec_vad">收音 / VAD</string>
+    <string name="vad_end_silence">结束静音 (ms)</string>
+    <string name="vad_min_level">绝对门限 RMS</string>
+    <string name="vad_voice_ratio">相对噪声倍数</string>
+    <string name="vad_max_speech">最长一句 (ms)</string>
+    <string name="vad_min_voiced">最少有声 (ms)</string>
+    <string name="vad_min_ratio">有声占比 (0-1)</string>
+    <string name="vad_min_speech">最短有效 (ms)</string>
+
+    <!-- 设置 · 口述 -->
+    <string name="sec_dictation">口述</string>
+    <string name="dict_max_ms">最长时长 (ms)</string>
+
+    <!-- 设置 · 语音库 -->
+    <string name="sec_library">语音库</string>
+    <string name="lib_save_ai">存档 AI 语音</string>
+    <string name="lib_save_user">存档我的录音（Live）</string>
+    <string name="lib_max_count">最多保留条数 (0=不限)</string>
+    <string name="lib_max_days">最多保留天数 (0=不限)</string>
+    <string name="lib_path_fmt">存档目录：%1$s</string>
+
+    <!-- 设置 · 整理 -->
+    <string name="sec_refine">整理 prompt（工具 LLM）</string>
+    <string name="hint_tool_llm">整理口述用。必须是普通 OpenAI 兼容端点（不支持 TavernLab 模式），例如本地 llama.cpp。</string>
+
+    <!-- 口述页 -->
+    <string name="dict_title">口述</string>
+    <string name="dict_hint_recording">正在聆听…想到哪说到哪，停顿没关系。说完点下面的按钮。</string>
+    <string name="dict_hint_review">识别结果如下，可直接修改；也可交给工具 LLM 整理。</string>
+    <string name="dict_stop">停止并识别</string>
+    <string name="dict_recognizing">识别中…</string>
+    <string name="dict_edit_hint">识别文本（可编辑）</string>
+    <string name="dict_refine">整理</string>
+    <string name="dict_undo">撤销整理</string>
+    <string name="dict_read">朗读</string>
+    <string name="dict_save">保存</string>
+    <string name="dict_redo">重录</string>
+    <string name="dict_send">发送给伙伴</string>
+    <string name="dict_saved">已保存</string>
+    <string name="dict_saved_rec">已留档（含录音）</string>
+    <string name="dict_need_mic">没有麦克风权限</string>
+    <string name="dict_need_tool_llm">请先在设置里填好「工具 LLM」</string>
+    <string name="dict_refining">整理中…</string>
+    <string name="dict_refined">已整理（可撤销）</string>
+    <string name="dict_refine_failed">整理失败：%1$s</string>
+    <string name="dict_need_tts">请先在设置里填好 TTS</string>
+    <string name="dict_synthesizing">合成中…</string>
+    <string name="dict_read_failed">朗读失败：%1$s</string>
+
+    <!-- 语音库页 -->
+    <string name="lib_title">语音库</string>
+    <string name="lib_open_dir">打开目录</string>
+    <string name="lib_clear">清空</string>
+    <string name="lib_empty">还没有记录</string>
+    <string name="lib_info_fmt">%1$d 条 · %2$d KB · %3$s</string>
+    <string name="lib_no_audio">这条是纯文本记录，没有音频</string>
+    <string name="lib_copy_path">复制路径</string>
+    <string name="lib_path_copied">路径已复制</string>
+    <string name="lib_clear_confirm">清空全部非收藏记录？收藏会保留。</string>
+    <string name="lib_no_text">（无文本）</string>
 </resources>

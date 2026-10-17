@@ -14,8 +14,7 @@
         <TextView
             android:layout_width="wrap_content"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="8dp"
-            android:text="DeskSpirit · API 配置"
+            android:text="@string/settings_title"
             android:textColor="@color/accent"
             android:textSize="20sp"
             android:textStyle="bold" />
@@ -23,114 +22,233 @@
         <TextView
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="20dp"
-            android:text="LLM 推荐指向 TavernLab（角色卡 / 记忆 / 上下文预算由它托管）；ASR、TTS 走云端接口。"
+            android:layout_marginTop="4dp"
+            android:layout_marginBottom="12dp"
+            android:text="@string/settings_subtitle"
             android:textColor="@color/text_secondary"
             android:textSize="13sp" />
 
-        <!-- ============ LLM ============ -->
-        <TextView style="@style/SectionTitle" android:text="@string/sec_llm" />
+        <!-- ============ 服务槽位切换 ============ -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/slotLlm"
+                style="@style/SlotChip"
+                android:text="@string/slot_llm" />
+
+            <Button
+                android:id="@+id/slotTool"
+                style="@style/SlotChip"
+                android:text="@string/slot_tool" />
+
+            <Button
+                android:id="@+id/slotAsr"
+                style="@style/SlotChip"
+                android:text="@string/slot_asr" />
+
+            <Button
+                android:id="@+id/slotTts"
+                style="@style/SlotChip"
+                android:text="@string/slot_tts" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/tvEndpointTitle"
+            style="@style/SectionTitle"
+            android:text="@string/sec_endpoint" />
+
+        <!-- profile 行 -->
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:gravity="center_vertical"
+            android:orientation="horizontal">
+
+            <Spinner
+                android:id="@+id/spProfile"
+                android:layout_width="0dp"
+                android:layout_height="wrap_content"
+                android:layout_weight="1"
+                android:background="@color/field_bg"
+                android:paddingStart="8dp"
+                android:paddingEnd="8dp" />
+
+            <Button
+                android:id="@+id/btnAddProfile"
+                style="@style/TestButton"
+                android:text="@string/prof_add" />
+
+            <Button
+                android:id="@+id/btnDupProfile"
+                style="@style/TestButton"
+                android:text="@string/prof_dup" />
+
+            <Button
+                android:id="@+id/btnDelProfile"
+                style="@style/TestButton"
+                android:text="@string/prof_del" />
+        </LinearLayout>
+
         <EditText
-            android:id="@+id/llmBase"
+            android:id="@+id/etBase"
             style="@style/FieldInput"
+            android:layout_marginTop="8dp"
             android:hint="@string/hint_base_url"
             android:inputType="textUri" />
+
         <EditText
-            android:id="@+id/llmKey"
+            android:id="@+id/etKey"
             style="@style/FieldInput"
             android:hint="@string/hint_api_key"
             android:inputType="textPassword" />
+
         <EditText
-            android:id="@+id/llmModel"
+            android:id="@+id/etModel"
             style="@style/FieldInput"
             android:hint="@string/hint_model"
             android:inputType="text" />
 
+        <EditText
+            android:id="@+id/etVoice"
+            style="@style/FieldInput"
+            android:hint="@string/hint_voice"
+            android:inputType="text" />
+
         <Switch
-            android:id="@+id/llmTavernLab"
+            android:id="@+id/swTavernLab"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginTop="6dp"
+            android:layout_marginTop="4dp"
             android:text="@string/label_tavernlab_mode"
             android:textColor="@color/text_primary"
             android:textSize="14sp" />
 
+        <LinearLayout style="@style/TestRow">
+            <Button
+                android:id="@+id/btnTest"
+                style="@style/TestButton"
+                android:text="@string/btn_test" />
+
+            <Button
+                android:id="@+id/btnPullModels"
+                style="@style/TestButton"
+                android:text="@string/btn_pull_models" />
+
+            <TextView
+                android:id="@+id/tvResult"
+                style="@style/ResultText" />
+        </LinearLayout>
+
         <TextView
+            android:id="@+id/tvSlotHint"
             android:layout_width="match_parent"
             android:layout_height="wrap_content"
-            android:layout_marginBottom="4dp"
-            android:text="@string/hint_tavernlab"
+            android:layout_marginTop="2dp"
+            android:textColor="@color/text_secondary"
+            android:textSize="12sp"
+            android:visibility="gone" />
+
+        <!-- ============ 收音 / VAD ============ -->
+        <TextView style="@style/SectionTitle" android:text="@string/sec_vad" />
+
+        <LinearLayout style="@style/RowWrap">
+            <TextView style="@style/RowLabel" android:text="@string/vad_end_silence" />
+            <EditText android:id="@+id/etEndSilence" style="@style/NumInput" />
+        </LinearLayout>
+
+        <LinearLayout style="@style/RowWrap">
+            <TextView style="@style/RowLabel" android:text="@string/vad_min_level" />
+            <EditText android:id="@+id/etMinLevel" style="@style/NumInput" />
+        </LinearLayout>
+
+        <LinearLayout style="@style/RowWrap">
+            <TextView style="@style/RowLabel" android:text="@string/vad_voice_ratio" />
+            <EditText android:id="@+id/etVoiceRatio" style="@style/NumInput" />
+        </LinearLayout>
+
+        <LinearLayout style="@style/RowWrap">
+            <TextView style="@style/RowLabel" android:text="@string/vad_max_speech" />
+            <EditText android:id="@+id/etMaxSpeech" style="@style/NumInput" />
+        </LinearLayout>
+
+        <LinearLayout style="@style/RowWrap">
+            <TextView style="@style/RowLabel" android:text="@string/vad_min_voiced" />
+            <EditText android:id="@+id/etMinVoiced" style="@style/NumInput" />
+        </LinearLayout>
+
+        <LinearLayout style="@style/RowWrap">
+            <TextView style="@style/RowLabel" android:text="@string/vad_min_ratio" />
+            <EditText android:id="@+id/etMinRatio" style="@style/NumInput" />
+        </LinearLayout>
+
+        <LinearLayout style="@style/RowWrap">
+            <TextView style="@style/RowLabel" android:text="@string/vad_min_speech" />
+            <EditText android:id="@+id/etMinSpeech" style="@style/NumInput" />
+        </LinearLayout>
+
+        <!-- ============ 口述 ============ -->
+        <TextView style="@style/SectionTitle" android:text="@string/sec_dictation" />
+
+        <LinearLayout style="@style/RowWrap">
+            <TextView style="@style/RowLabel" android:text="@string/dict_max_ms" />
+            <EditText android:id="@+id/etDictMax" style="@style/NumInput" />
+        </LinearLayout>
+
+        <!-- ============ 语音库 ============ -->
+        <TextView style="@style/SectionTitle" android:text="@string/sec_library" />
+
+        <Switch
+            android:id="@+id/swSaveVoice"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/lib_save_ai"
+            android:textColor="@color/text_primary"
+            android:textSize="14sp" />
+
+        <Switch
+            android:id="@+id/swSaveUser"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:text="@string/lib_save_user"
+            android:textColor="@color/text_primary"
+            android:textSize="14sp" />
+
+        <LinearLayout style="@style/RowWrap">
+            <TextView style="@style/RowLabel" android:text="@string/lib_max_count" />
+            <EditText android:id="@+id/etMaxCount" style="@style/NumInput" />
+        </LinearLayout>
+
+        <LinearLayout style="@style/RowWrap">
+            <TextView style="@style/RowLabel" android:text="@string/lib_max_days" />
+            <EditText android:id="@+id/etMaxDays" style="@style/NumInput" />
+        </LinearLayout>
+
+        <TextView
+            android:id="@+id/tvLibPath"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="4dp"
             android:textColor="@color/text_secondary"
             android:textSize="12sp" />
 
-        <LinearLayout style="@style/TestRow">
-            <Button
-                android:id="@+id/btnTestLlm"
-                style="@style/TestButton"
-                android:text="@string/btn_test" />
-            <TextView
-                android:id="@+id/llmResult"
-                style="@style/ResultText" />
-        </LinearLayout>
+        <!-- ============ 整理 prompt ============ -->
+        <TextView style="@style/SectionTitle" android:text="@string/sec_refine" />
 
-        <!-- ============ ASR ============ -->
-        <TextView style="@style/SectionTitle" android:text="@string/sec_asr" />
         <EditText
-            android:id="@+id/asrBase"
-            style="@style/FieldInput"
-            android:hint="@string/hint_base_url"
-            android:inputType="textUri" />
-        <EditText
-            android:id="@+id/asrKey"
-            style="@style/FieldInput"
-            android:hint="@string/hint_api_key"
-            android:inputType="textPassword" />
-        <EditText
-            android:id="@+id/asrModel"
-            style="@style/FieldInput"
-            android:hint="@string/hint_model"
-            android:inputType="text" />
-        <LinearLayout style="@style/TestRow">
-            <Button
-                android:id="@+id/btnTestAsr"
-                style="@style/TestButton"
-                android:text="@string/btn_test" />
-            <TextView
-                android:id="@+id/asrResult"
-                style="@style/ResultText" />
-        </LinearLayout>
-
-        <!-- ============ TTS ============ -->
-        <TextView style="@style/SectionTitle" android:text="@string/sec_tts" />
-        <EditText
-            android:id="@+id/ttsBase"
-            style="@style/FieldInput"
-            android:hint="@string/hint_base_url"
-            android:inputType="textUri" />
-        <EditText
-            android:id="@+id/ttsKey"
-            style="@style/FieldInput"
-            android:hint="@string/hint_api_key"
-            android:inputType="textPassword" />
-        <EditText
-            android:id="@+id/ttsModel"
-            style="@style/FieldInput"
-            android:hint="@string/hint_model"
-            android:inputType="text" />
-        <EditText
-            android:id="@+id/ttsVoice"
-            style="@style/FieldInput"
-            android:hint="@string/hint_voice"
-            android:inputType="text" />
-        <LinearLayout style="@style/TestRow">
-            <Button
-                android:id="@+id/btnTestTts"
-                style="@style/TestButton"
-                android:text="@string/btn_test" />
-            <TextView
-                android:id="@+id/ttsResult"
-                style="@style/ResultText" />
-        </LinearLayout>
+            android:id="@+id/etRefinePrompt"
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:background="@color/field_bg"
+            android:gravity="top|start"
+            android:inputType="textMultiLine"
+            android:minLines="4"
+            android:padding="12dp"
+            android:textColor="@color/text_primary"
+            android:textColorHint="@color/text_secondary"
+            android:textSize="14sp" />
 
         <Button
             android:id="@+id/btnSave"

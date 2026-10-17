@@ -1,110 +1,344 @@
 package com.roychong.deskspirit.settings
 
 import android.os.Bundle
+import android.text.InputType
+import android.view.View
+import android.widget.ArrayAdapter
 import android.widget.Button
 import android.widget.EditText
+import android.widget.Spinner
 import android.widget.Switch
 import android.widget.TextView
 import android.widget.Toast
+import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import com.roychong.deskspirit.R
 import com.roychong.deskspirit.config.ApiConfig
+import com.roychong.deskspirit.config.AudioSettings
+import com.roychong.deskspirit.config.DictationParams
+import com.roychong.deskspirit.config.Endpoint
 import com.roychong.deskspirit.config.LlmMode
+import com.roychong.deskspirit.config.Slot
+import com.roychong.deskspirit.config.VadParams
 import com.roychong.deskspirit.net.ApiTester
+import com.roychong.deskspirit.voice.VoiceStore
 import kotlin.concurrent.thread
 
+/**
+ * 设置页：
+ *  - 每服务一组命名端点（profile），可增删/复制/测试/拉取模型，逐个切换"当前使用"
+ *  - 收音（VAD）参数
+ *  - 语音库（是否存档、清理上限）
+ *  - 整理 prompt 模板
+ *
+ * 编辑在内存工作副本里进行，「保存」时统一落盘。
+ */
 class SettingsActivity : AppCompatActivity() {
 
     private lateinit var config: ApiConfig
+    private lateinit var local: AudioSettings
 
-    private lateinit var llmBase: EditText
-    private lateinit var llmKey: EditText
-    private lateinit var llmModel: EditText
-    private lateinit var llmTavernLab: Switch
-    private lateinit var llmResult: TextView
+    private lateinit var spProfile: Spinner
+    private lateinit var etBase: EditText
+    private lateinit var etKey: EditText
+    private lateinit var etModel: EditText
+    private lateinit var etVoice: EditText
+    private lateinit var swTavernLab: Switch
+    private lateinit var tvResult: TextView
+    private lateinit var tvEndpointTitle: TextView
+    private lateinit var tvSlotHint: TextView
+    private lateinit var slotButtons: Map<Slot, Button>
 
-    private lateinit var asrBase: EditText
-    private lateinit var asrKey: EditText
-    private lateinit var asrModel: EditText
-    private lateinit var asrResult: TextView
+    private lateinit var etEndSilence: EditText
+    private lateinit var etMinLevel: EditText
+    private lateinit var etVoiceRatio: EditText
+    private lateinit var etMaxSpeech: EditText
+    private lateinit var etMinVoiced: EditText
+    private lateinit var etMinRatio: EditText
+    private lateinit var etMinSpeech: EditText
+    private lateinit var etDictMax: EditText
 
-    private lateinit var ttsBase: EditText
-    private lateinit var ttsKey: EditText
-    private lateinit var ttsModel: EditText
-    private lateinit var ttsVoice: EditText
-    private lateinit var ttsResult: TextView
+    private lateinit var swSaveVoice: Switch
+    private lateinit var swSaveUser: Switch
+    private lateinit var etMaxCount: EditText
+    private lateinit var etMaxDays: EditText
+    private lateinit var tvLibPath: TextView
+
+    private lateinit var etRefinePrompt: EditText
+
+    private class SlotState(val list: MutableList<Endpoint>, var active: Int)
+
+    private val work = HashMap<Slot, SlotState>()
+    private var current: Slot = Slot.LLM_DIALOG
+    private var rendering = false
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
         setContentView(R.layout.activity_settings)
         config = ApiConfig(this)
+        local = AudioSettings(this)
 
-        llmBase = findViewById(R.id.llmBase)
-        llmKey = findViewById(R.id.llmKey)
-        llmModel = findViewById(R.id.llmModel)
-        llmTavernLab = findViewById(R.id.llmTavernLab)
-        llmResult = findViewById(R.id.llmResult)
-        asrBase = findViewById(R.id.asrBase)
-        asrKey = findViewById(R.id.asrKey)
-        asrModel = findViewById(R.id.asrModel)
-        asrResult = findViewById(R.id.asrResult)
-        ttsBase = findViewById(R.id.ttsBase)
-        ttsKey = findViewById(R.id.ttsKey)
-        ttsModel = findViewById(R.id.ttsModel)
-        ttsVoice = findViewById(R.id.ttsVoice)
-        ttsResult = findViewById(R.id.ttsResult)
+        spProfile = findViewById(R.id.spProfile)
+        etBase = findViewById(R.id.etBase)
+        etKey = findViewById(R.id.etKey)
+        etModel = findViewById(R.id.etModel)
+        etVoice = findViewById(R.id.etVoice)
+        swTavernLab = findViewById(R.id.swTavernLab)
+        tvResult = findViewById(R.id.tvResult)
+        tvEndpointTitle = findViewById(R.id.tvEndpointTitle)
+        tvSlotHint = findViewById(R.id.tvSlotHint)
 
-        load()
+        etEndSilence = findViewById(R.id.etEndSilence)
+        etMinLevel = findViewById(R.id.etMinLevel)
+        etVoiceRatio = findViewById(R.id.etVoiceRatio)
+        etMaxSpeech = findViewById(R.id.etMaxSpeech)
+        etMinVoiced = findViewById(R.id.etMinVoiced)
+        etMinRatio = findViewById(R.id.etMinRatio)
+        etMinSpeech = findViewById(R.id.etMinSpeech)
+        etDictMax = findViewById(R.id.etDictMax)
 
-        findViewById<Button>(R.id.btnTestLlm).setOnClickListener {
-            val r = llmResult; r.text = getString(R.string.testing)
-            thread {
-                val res = ApiTester.testLlm(
-                    llmBase.text.toString(), llmKey.text.toString(),
-                    llmModel.text.toString(), currentLlmMode()
-                )
-                runOnUiThread { r.text = "${if (res.ok) "✔" else "✘"} ${res.message}" }
-            }
-        }
-        findViewById<Button>(R.id.btnTestAsr).setOnClickListener {
-            val r = asrResult; r.text = getString(R.string.testing)
-            thread {
-                val res = ApiTester.testAsr(asrBase.text.toString(), asrKey.text.toString(), asrModel.text.toString())
-                runOnUiThread { r.text = "${if (res.ok) "✔" else "✘"} ${res.message}" }
-            }
-        }
-        findViewById<Button>(R.id.btnTestTts).setOnClickListener {
-            val r = ttsResult; r.text = getString(R.string.testing)
-            thread {
-                val res = ApiTester.testTts(
-                    ttsBase.text.toString(), ttsKey.text.toString(),
-                    ttsModel.text.toString(), ttsVoice.text.toString()
-                )
-                runOnUiThread { r.text = "${if (res.ok) "✔" else "✘"} ${res.message}" }
-            }
-        }
-        findViewById<Button>(R.id.btnSave).setOnClickListener {
-            save()
-            Toast.makeText(this, getString(R.string.saved), Toast.LENGTH_SHORT).show()
-        }
-    }
+        swSaveVoice = findViewById(R.id.swSaveVoice)
+        swSaveUser = findViewById(R.id.swSaveUser)
+        etMaxCount = findViewById(R.id.etMaxCount)
+        etMaxDays = findViewById(R.id.etMaxDays)
+        tvLibPath = findViewById(R.id.tvLibPath)
 
-    private fun currentLlmMode() =
-        if (llmTavernLab.isChecked) LlmMode.TAVERNLAB else LlmMode.OPENAI
+        etRefinePrompt = findViewById(R.id.etRefinePrompt)
 
-    private fun load() {
-        val l = config.llm(); llmBase.setText(l.baseUrl); llmKey.setText(l.apiKey); llmModel.setText(l.model)
-        llmTavernLab.isChecked = config.llmMode() == LlmMode.TAVERNLAB
-        val a = config.asr(); asrBase.setText(a.baseUrl); asrKey.setText(a.apiKey); asrModel.setText(a.model)
-        val t = config.tts(); ttsBase.setText(t.baseUrl); ttsKey.setText(t.apiKey); ttsModel.setText(t.model); ttsVoice.setText(t.voice)
-    }
-
-    private fun save() {
-        config.saveLlm(
-            llmBase.text.toString(), llmKey.text.toString(),
-            llmModel.text.toString(), currentLlmMode()
+        slotButtons = mapOf(
+            Slot.LLM_DIALOG to findViewById(R.id.slotLlm),
+            Slot.LLM_TOOL to findViewById(R.id.slotTool),
+            Slot.ASR to findViewById(R.id.slotAsr),
+            Slot.TTS to findViewById(R.id.slotTts),
         )
-        config.saveAsr(asrBase.text.toString(), asrKey.text.toString(), asrModel.text.toString())
-        config.saveTts(ttsBase.text.toString(), ttsKey.text.toString(), ttsModel.text.toString(), ttsVoice.text.toString())
+
+        // 载入工作副本
+        for (s in Slot.values()) {
+            work[s] = SlotState(config.profiles(s).toMutableList(), config.activeIndex(s))
+        }
+
+        for ((slot, btn) in slotButtons) {
+            btn.setOnClickListener { switchSlot(slot) }
+        }
+
+        spProfile.onItemSelectedListener = object : android.widget.AdapterView.OnItemSelectedListener {
+            override fun onItemSelected(p: android.widget.AdapterView<*>?, v: View?, pos: Int, id: Long) {
+                if (rendering) return
+                val st = work[current] ?: return
+                // 载入/re-render 时 Spinner 也会回调，位置没变就忽略，
+                // 否则会把刚填好的字段当成"用户切换了 profile"而清空。
+                if (pos == st.active) return
+                commit()
+                st.active = pos
+                renderEditor()
+            }
+
+            override fun onNothingSelected(p: android.widget.AdapterView<*>?) {}
+        }
+        spProfile.setOnLongClickListener { renameProfile(); true }
+
+        findViewById<View>(R.id.btnAddProfile).setOnClickListener { addProfile() }
+        findViewById<View>(R.id.btnDupProfile).setOnClickListener { dupProfile() }
+        findViewById<View>(R.id.btnDelProfile).setOnClickListener { delProfile() }
+        findViewById<View>(R.id.btnTest).setOnClickListener { testEndpoint() }
+        findViewById<View>(R.id.btnPullModels).setOnClickListener { pullModels() }
+        findViewById<View>(R.id.btnSave).setOnClickListener { saveAll() }
+
+        loadLocalSettings()
+        renderEditor()
     }
+
+    // ---------------- profile 编辑 ----------------
+
+    private fun switchSlot(slot: Slot) {
+        commit()
+        current = slot
+        renderEditor()
+    }
+
+    private fun renderEditor() {
+        rendering = true
+        val st = work[current]!!
+        val names = st.list.map { it.name }
+        val ad = ArrayAdapter(this, android.R.layout.simple_spinner_item, names)
+        ad.setDropDownViewResource(android.R.layout.simple_spinner_dropdown_item)
+        spProfile.adapter = ad
+        st.active = st.active.coerceIn(0, st.list.size - 1)
+        spProfile.setSelection(st.active)
+
+        val e = st.list[st.active]
+        etBase.setText(e.baseUrl)
+        etKey.setText(e.apiKey)
+        etModel.setText(e.model)
+        etVoice.setText(e.voice)
+        swTavernLab.isChecked = e.llmMode == LlmMode.TAVERNLAB
+
+        tvEndpointTitle.text = getString(R.string.sec_endpoint_fmt, current.label)
+        etVoice.visibility = if (current.needsVoice) View.VISIBLE else View.GONE
+        swTavernLab.visibility = if (current.isLlm) View.VISIBLE else View.GONE
+        if (current == Slot.LLM_TOOL) {
+            tvSlotHint.setText(R.string.hint_tool_llm)
+            tvSlotHint.visibility = View.VISIBLE
+        } else {
+            tvSlotHint.visibility = View.GONE
+        }
+        tvResult.text = ""
+
+        for ((s, b) in slotButtons) {
+            b.alpha = if (s == current) 1f else 0.5f
+        }
+        rendering = false
+    }
+
+    private fun commit() {
+        val st = work[current] ?: return
+        if (st.list.isEmpty()) return
+        val i = st.active.coerceIn(0, st.list.size - 1)
+        val old = st.list[i]
+        st.list[i] = old.copy(
+            baseUrl = etBase.text.toString().trim(),
+            apiKey = etKey.text.toString().trim(),
+            model = etModel.text.toString().trim(),
+            voice = etVoice.text.toString().trim(),
+            llmMode = if (swTavernLab.isChecked) LlmMode.TAVERNLAB else LlmMode.OPENAI,
+        )
+    }
+
+    private fun addProfile() {
+        commit()
+        val st = work[current]!!
+        st.list.add(Endpoint(name = getString(R.string.prof_new, st.list.size + 1)))
+        st.active = st.list.size - 1
+        renderEditor()
+        etBase.requestFocus()
+    }
+
+    private fun dupProfile() {
+        commit()
+        val st = work[current]!!
+        val src = st.list[st.active]
+        st.list.add(src.copy(name = getString(R.string.prof_copy, src.name)))
+        st.active = st.list.size - 1
+        renderEditor()
+    }
+
+    private fun delProfile() {
+        commit()
+        val st = work[current]!!
+        if (st.list.size <= 1) {
+            Toast.makeText(this, R.string.prof_keep_one, Toast.LENGTH_SHORT).show()
+            return
+        }
+        st.list.removeAt(st.active)
+        st.active = (st.active - 1).coerceAtLeast(0)
+        renderEditor()
+    }
+
+    private fun renameProfile() {
+        commit()
+        val st = work[current]!!
+        val et = EditText(this)
+        et.inputType = InputType.TYPE_CLASS_TEXT
+        et.setText(st.list[st.active].name)
+        AlertDialog.Builder(this)
+            .setTitle(R.string.prof_rename)
+            .setView(et)
+            .setPositiveButton(android.R.string.ok) { _, _ ->
+                val name = et.text.toString().trim()
+                if (name.isNotEmpty()) {
+                    val old = st.list[st.active]
+                    st.list[st.active] = old.copy(name = name)
+                    renderEditor()
+                }
+            }
+            .setNegativeButton(android.R.string.cancel, null)
+            .show()
+    }
+
+    private fun testEndpoint() {
+        commit()
+        val e = work[current]!!.let { it.list[it.active] }
+        tvResult.text = getString(R.string.testing)
+        thread {
+            val res = ApiTester.test(current, e)
+            runOnUiThread { tvResult.text = "${if (res.ok) "✔" else "✘"} ${res.message}" }
+        }
+    }
+
+    private fun pullModels() {
+        commit()
+        val e = work[current]!!.let { it.list[it.active] }
+        tvResult.text = getString(R.string.pulling)
+        thread {
+            val res = ApiTester.listModels(e.baseUrl, e.apiKey)
+            runOnUiThread {
+                if (!res.ok) {
+                    tvResult.text = "✘ ${res.message}"
+                    return@runOnUiThread
+                }
+                tvResult.text = "✔ ${res.message}"
+                AlertDialog.Builder(this)
+                    .setTitle(R.string.pick_model)
+                    .setItems(res.ids.toTypedArray()) { _, which -> etModel.setText(res.ids[which]) }
+                    .show()
+            }
+        }
+    }
+
+    // ---------------- 本地设置 ----------------
+
+    private fun loadLocalSettings() {
+        val v = local.vad()
+        etEndSilence.setText(v.endSilenceMs.toString())
+        etMinLevel.setText(v.minLevel.toString())
+        etVoiceRatio.setText(v.voiceRatio.toString())
+        etMaxSpeech.setText(v.maxSpeechMs.toString())
+        etMinVoiced.setText(v.minVoicedMs.toString())
+        etMinRatio.setText(v.minVoicedRatio.toString())
+        etMinSpeech.setText(v.minSpeechMs.toString())
+        etDictMax.setText(local.dictation().maxMs.toString())
+
+        swSaveVoice.isChecked = local.saveVoice()
+        swSaveUser.isChecked = local.saveUserAudio()
+        etMaxCount.setText(local.voiceMaxCount().toString())
+        etMaxDays.setText(local.voiceMaxDays().toString())
+        etRefinePrompt.setText(local.refinePrompt())
+
+        tvLibPath.text = getString(R.string.lib_path_fmt, VoiceStore(this).dir.absolutePath)
+    }
+
+    private fun saveLocalSettings() {
+        local.saveVad(
+            VadParams(
+                endSilenceMs = etEndSilence.i(900),
+                minLevel = etMinLevel.f(0.012f),
+                voiceRatio = etVoiceRatio.f(3.0f),
+                maxSpeechMs = etMaxSpeech.i(15000),
+                minVoicedMs = etMinVoiced.i(320),
+                minVoicedRatio = etMinRatio.f(0.30f),
+                minSpeechMs = etMinSpeech.i(250),
+            )
+        )
+        local.saveDictation(DictationParams(maxMs = etDictMax.i(120_000).coerceIn(10_000, 300_000)))
+        local.saveVoicePrefs(
+            save = swSaveVoice.isChecked,
+            saveUser = swSaveUser.isChecked,
+            maxCount = etMaxCount.i(200).coerceAtLeast(0),
+            maxDays = etMaxDays.i(30).coerceAtLeast(0),
+        )
+        local.saveRefinePrompt(etRefinePrompt.text.toString())
+    }
+
+    private fun saveAll() {
+        commit()
+        for (s in Slot.values()) {
+            val st = work[s] ?: continue
+            config.save(s, st.list, st.active)
+        }
+        saveLocalSettings()
+        Toast.makeText(this, R.string.saved, Toast.LENGTH_SHORT).show()
+    }
+
+    private fun EditText.i(def: Int): Int = text.toString().trim().toIntOrNull() ?: def
+    private fun EditText.f(def: Float): Float = text.toString().trim().toFloatOrNull() ?: def
 }

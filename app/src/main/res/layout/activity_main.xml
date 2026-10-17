@@ -73,6 +73,28 @@
                 android:textSize="17sp"
                 android:lineSpacingExtra="4dp" />
         </ScrollView>
+
+        <LinearLayout
+            android:layout_width="match_parent"
+            android:layout_height="wrap_content"
+            android:layout_marginTop="6dp"
+            android:orientation="horizontal">
+
+            <Button
+                android:id="@+id/btnReplay"
+                style="@style/BarButton"
+                android:text="@string/btn_replay" />
+
+            <Button
+                android:id="@+id/btnDictate"
+                style="@style/BarButton"
+                android:text="@string/btn_dictate" />
+
+            <Button
+                android:id="@+id/btnLibrary"
+                style="@style/BarButton"
+                android:text="@string/btn_library" />
+        </LinearLayout>
     </LinearLayout>
 
 </FrameLayout>

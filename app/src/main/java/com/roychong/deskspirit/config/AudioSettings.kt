@@ -1,0 +1,121 @@
+package com.roychong.deskspirit.config
+
+import android.content.Context
+
+/** 收音（VAD）参数。全部可调，见设置页「收音」。 */
+data class VadParams(
+    /** 说完后静音多久算一句结束。 */
+    val endSilenceMs: Int = 900,
+    /** 绝对门限（RMS）：环境底噪一般远低于它。 */
+    val minLevel: Float = 0.012f,
+    /** 相对门限：比噪声地板高这么多倍才算有人说话。 */
+    val voiceRatio: Float = 3.0f,
+    /** 最长一句话，超了强制切。 */
+    val maxSpeechMs: Int = 15000,
+    /** 一段话至少要有这么多毫秒是"真·有声"。 */
+    val minVoicedMs: Int = 320,
+    /** 有声帧占整段的比例下限。 */
+    val minVoicedRatio: Float = 0.30f,
+    /** 太短的整段直接丢掉。 */
+    val minSpeechMs: Int = 250,
+)
+
+/** 口述（2-pass）参数。 */
+data class DictationParams(
+    /** 口述最长时长，到点自动停止并识别。 */
+    val maxMs: Int = 120_000,
+)
+
+/**
+ * 本地交互参数（收音 / 口述 / 语音库 / 整理 prompt）。
+ * 与 API 配置分开存，逻辑上互不相干。
+ */
+class AudioSettings(context: Context) {
+
+    private val sp = context.applicationContext
+        .getSharedPreferences(PREFS, Context.MODE_PRIVATE)
+
+    fun vad() = VadParams(
+        endSilenceMs = sp.getInt(KV_END_SILENCE, 900),
+        minLevel = sp.getFloat(KV_MIN_LEVEL, 0.012f),
+        voiceRatio = sp.getFloat(KV_VOICE_RATIO, 3.0f),
+        maxSpeechMs = sp.getInt(KV_MAX_SPEECH, 15000),
+        minVoicedMs = sp.getInt(KV_MIN_VOICED, 320),
+        minVoicedRatio = sp.getFloat(KV_MIN_RATIO, 0.30f),
+        minSpeechMs = sp.getInt(KV_MIN_SPEECH, 250),
+    )
+
+    fun saveVad(p: VadParams) = sp.edit()
+        .putInt(KV_END_SILENCE, p.endSilenceMs)
+        .putFloat(KV_MIN_LEVEL, p.minLevel)
+        .putFloat(KV_VOICE_RATIO, p.voiceRatio)
+        .putInt(KV_MAX_SPEECH, p.maxSpeechMs)
+        .putInt(KV_MIN_VOICED, p.minVoicedMs)
+        .putFloat(KV_MIN_RATIO, p.minVoicedRatio)
+        .putInt(KV_MIN_SPEECH, p.minSpeechMs)
+        .apply()
+
+    fun dictation() = DictationParams(
+        maxMs = sp.getInt(KD_MAX, 120_000),
+    )
+
+    fun saveDictation(p: DictationParams) = sp.edit()
+        .putInt(KD_MAX, p.maxMs)
+        .apply()
+
+    // ---- 语音库 ----
+
+    /** 是否把 TTS 生成的语音存档。 */
+    fun saveVoice(): Boolean = sp.getBoolean(KV_SAVE_VOICE, true)
+
+    /** 是否把 Live 模式的用户录音也存档（方便核对 ASR）。 */
+    fun saveUserAudio(): Boolean = sp.getBoolean(KV_SAVE_USER, false)
+
+    /** 最多保留多少条（0 = 不限）。 */
+    fun voiceMaxCount(): Int = sp.getInt(KV_MAX_COUNT, 200)
+
+    /** 最多保留多少天（0 = 不限）。 */
+    fun voiceMaxDays(): Int = sp.getInt(KV_MAX_DAYS, 30)
+
+    fun saveVoicePrefs(save: Boolean, saveUser: Boolean, maxCount: Int, maxDays: Int) = sp.edit()
+        .putBoolean(KV_SAVE_VOICE, save)
+        .putBoolean(KV_SAVE_USER, saveUser)
+        .putInt(KV_MAX_COUNT, maxCount)
+        .putInt(KV_MAX_DAYS, maxDays)
+        .apply()
+
+    // ---- 整理 prompt ----
+
+    fun refinePrompt(): String = sp.getString(KV_REFINE_PROMPT, DEFAULT_REFINE_PROMPT)
+        ?: DEFAULT_REFINE_PROMPT
+
+    fun saveRefinePrompt(s: String) = sp.edit()
+        .putString(KV_REFINE_PROMPT, s.trim().ifBlank { DEFAULT_REFINE_PROMPT })
+        .apply()
+
+    companion object {
+        private const val PREFS = "deskspirit_local"
+
+        private const val KV_END_SILENCE = "vad_end_silence_ms"
+        private const val KV_MIN_LEVEL = "vad_min_level"
+        private const val KV_VOICE_RATIO = "vad_voice_ratio"
+        private const val KV_MAX_SPEECH = "vad_max_speech_ms"
+        private const val KV_MIN_VOICED = "vad_min_voiced_ms"
+        private const val KV_MIN_RATIO = "vad_min_voiced_ratio"
+        private const val KV_MIN_SPEECH = "vad_min_speech_ms"
+
+        private const val KD_MAX = "dictation_max_ms"
+
+        private const val KV_SAVE_VOICE = "voice_save_ai"
+        private const val KV_SAVE_USER = "voice_save_user"
+        private const val KV_MAX_COUNT = "voice_max_count"
+        private const val KV_MAX_DAYS = "voice_max_days"
+
+        private const val KV_REFINE_PROMPT = "refine_prompt"
+
+        const val DEFAULT_REFINE_PROMPT =
+            "把下面这段语音识别出来的口述整理成通顺的段落：纠正明显的识别错别字，" +
+                "去掉口头重复和「呃、那个、就是」这类碎词，按意思分段。" +
+                "保留原意与语气，不要添加原文没有的内容，不要总结或改写观点。只输出整理后的正文。"
+    }
+}
