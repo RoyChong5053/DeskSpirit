@@ -46,6 +46,9 @@
     <string name="btn_save">保存</string>
     <string name="saved">已保存</string>
     <string name="testing">测试中…</string>
+    <string name="tts_test_playing">播放中…</string>
+    <string name="tts_test_done">播放完毕</string>
+    <string name="tts_test_stopped">已停止</string>
 
     <string name="prof_add">＋新建</string>
     <string name="prof_dup">复制</string>
@@ -96,6 +99,8 @@
     <string name="sec_tts_net">合成超时</string>
     <string name="tts_timeout_s">等待上限（秒）</string>
     <string name="tts_timeout_hint">TTS 是整段合成完才返回，长段落可能要几分钟。本地 TTS 建议先设 240~300；云端 90 一般够。</string>
+    <string name="stream_speech">流式播报（Stream mode）</string>
+    <string name="stream_speech_hint">开：LLM 一出句号就合成这一句、立刻开播，后面边播边算 —— 开口最快，适合本地/较慢的 TTS（Kokoro、edge-tts）。\n关：等整段回复出完，一次请求合成、整段播放 —— 适合响应极快的云端 TTS（Qwen、OpenAI 等），也不走分段通道。遇到杂音可以先用这一档对照。</string>
     <string name="sec_vad">收音 / VAD</string>
     <string name="vad_end_silence">结束静音 (ms)</string>
     <string name="vad_min_level">绝对门限 RMS</string>

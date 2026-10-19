@@ -67,6 +67,10 @@ class MainActivity : AppCompatActivity() {
     private var lastHighlight = -1
     private var dimColor = 0
     private var hotColor = 0
+    /** 每一片口播文本在 [speechText] 里的字符区间，进度回调按片段号对进来。 */
+    private val segRanges = ArrayList<IntRange>()
+    /** 原文已经让位给口播文本了：之后的 [showRawText] 一律忽略（见其注释）。 */
+    private var speechMode = false
 
     /**
      * 忙状态的秒数走动。识别（上传 + 服务端推理）常有 5-10 秒，
@@ -215,8 +219,8 @@ class MainActivity : AppCompatActivity() {
                 clearReply()
             },
             onAiText = { text -> showRawText(text) },
-            onSpeechText = { text -> showSpeechText(text) },
-            onSpeechProgress = { p -> renderHighlight(p) },
+            onSpeechSegment = { index, text -> showSpeechSegment(index, text) },
+            onSpeechProgress = { seg, frac -> renderSegmentProgress(seg, frac) },
             onError = { msg ->
                 clearReply()
                 tvReply.text = "⚠️ $msg"
@@ -249,27 +253,50 @@ class MainActivity : AppCompatActivity() {
     private fun clearReply() {
         speechText = ""
         weightCum = FloatArray(0)
+        segRanges.clear()
+        speechMode = false
         lastHighlight = -1
         tvReply.text = ""
         replyScroll.scrollTo(0, 0)
     }
 
-    /** LLM 流式阶段：显示原文，并跟着往下滚。 */
+    /**
+     * LLM 流式阶段：显示原文，并跟着往下滚。
+     *
+     * 逐句播报时，第一片口播文本一到（[showSpeechSegment]）就切到"念出来的那份"，
+     * 但 LLM 这时候往往还在吐字 —— 那些 `onAiText` 是**原文**，会把已经切好的
+     * 字幕又覆盖回去。所以切过去之后一律忽略原文。
+     */
     private fun showRawText(text: String) {
+        if (speechMode) return
         speechText = ""
         weightCum = FloatArray(0)
+        segRanges.clear()
         lastHighlight = -1
         tvReply.text = text
         replyScroll.post { replyScroll.fullScroll(View.FOCUS_DOWN) }
     }
 
-    /** 开始播报：换成真正要念的文本，准备逐字高亮。 */
-    private fun showSpeechText(text: String) {
-        speechText = text
-        weightCum = buildWeights(text)
-        lastHighlight = -1
-        replyScroll.scrollTo(0, 0)
-        renderHighlight(0f)
+    /**
+     * 定稿了一片要念的文本：**按序追加**到字幕里。
+     *
+     * 第 0 片意味着"原文让位给口播文本"（清洗后的才是真正占播放时间的那些字），
+     * 所以先把之前的原文清掉再从头开始。
+     */
+    private fun showSpeechSegment(index: Int, text: String) {
+        if (index == 0) {
+            speechMode = true
+            speechText = ""
+            weightCum = FloatArray(1)
+            segRanges.clear()
+            lastHighlight = -1
+            replyScroll.scrollTo(0, 0)
+        }
+        val start = speechText.length
+        speechText += text
+        segRanges.add(start until speechText.length)
+        weightCum = buildWeights(speechText)
+        draw()
     }
 
     /**
@@ -291,26 +318,45 @@ class MainActivity : AppCompatActivity() {
         return cum
     }
 
-    private fun renderHighlight(progress: Float) {
-        val n = speechText.length
-        if (n == 0 || weightCum.size != n + 1) return
-        val idx = indexForProgress(progress)
-        if (idx == lastHighlight) return
-        lastHighlight = idx
-
-        val sp = SpannableString(speechText)
-        sp.setSpan(ForegroundColorSpan(dimColor), 0, n, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-        if (idx > 0) {
-            sp.setSpan(ForegroundColorSpan(hotColor), 0, idx, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
-        }
-        tvReply.text = sp
-        scrollToOffset(idx)
+    /**
+     * 第 [seg] 片的播放进度 → 全文字幕的高亮位置。
+     *
+     * 片段内用「按标点加权的字符表」折算成字符下标，片段之间靠累计位置天然对齐。
+     * 比拿整篇按比例分准得多，而且后面的片段还没定稿（文本还在长）也不会跑偏。
+     */
+    private fun renderSegmentProgress(seg: Int, fraction: Float) {
+        val r = segRanges.getOrNull(seg) ?: return
+        if (r.isEmpty() || weightCum.size != speechText.length + 1) return
+        val lo = weightCum[r.first]
+        val hi = weightCum[r.last + 1]
+        val target = lo + (hi - lo) * fraction.coerceIn(0f, 1f)
+        renderHighlightAt(weightIndex(target))
     }
 
-    private fun indexForProgress(p: Float): Int {
+    /** 高亮**只前进不回退**：片段进度是估算的，偶尔会往回跳一点点。 */
+    private fun renderHighlightAt(idx: Int) {
+        if (idx <= lastHighlight) return
+        lastHighlight = idx
+        draw()
+    }
+
+    private fun draw() {
+        val n = speechText.length
+        if (n == 0 || weightCum.size != n + 1) return
+        val i = lastHighlight.coerceIn(0, n)
+        val sp = SpannableString(speechText)
+        sp.setSpan(ForegroundColorSpan(dimColor), 0, n, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        if (i > 0) {
+            sp.setSpan(ForegroundColorSpan(hotColor), 0, i, Spanned.SPAN_EXCLUSIVE_EXCLUSIVE)
+        }
+        tvReply.text = sp
+        scrollToOffset(i)
+    }
+
+    /** 权重值 → 字符下标（weightCum 单调递增，二分即可）。 */
+    private fun weightIndex(target: Float): Int {
         val n = weightCum.size - 1
         if (n <= 0) return 0
-        val target = weightCum[n] * p.coerceIn(0f, 1f)
         var lo = 0
         var hi = n
         while (lo < hi) {

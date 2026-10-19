@@ -15,6 +15,7 @@ import android.widget.Toast
 import androidx.appcompat.app.AlertDialog
 import androidx.appcompat.app.AppCompatActivity
 import com.roychong.deskspirit.R
+import com.roychong.deskspirit.audio.AudioPlayer
 import com.roychong.deskspirit.config.ApiConfig
 import com.roychong.deskspirit.config.AudioSettings
 import com.roychong.deskspirit.config.DictationParams
@@ -52,9 +53,22 @@ class SettingsActivity : AppCompatActivity() {
     private lateinit var etVoice: EditText
     private lateinit var swTavernLab: Switch
     private lateinit var tvResult: TextView
+    private lateinit var btnTest: Button
     private lateinit var tvEndpointTitle: TextView
     private lateinit var tvSlotHint: TextView
     private lateinit var slotButtons: Map<Slot, Button>
+
+    /** TTS 试听用：播的就是「测试」按钮那次合成出来的音频。 */
+    private lateinit var player: AudioPlayer
+
+    /** 试听中（此刻「测试」按钮当「停止」用）。 */
+    private var ttsTestPlaying = false
+
+    /**
+     * 试听令牌：每次发起试听自增。播完回调里若对不上，说明这一路已经被新的试听
+     * 或「停止」顶掉了，就不要再回写按钮和状态行。
+     */
+    private var ttsTestToken = 0
 
     private lateinit var boxMain: View
     private lateinit var boxTool: View
@@ -85,6 +99,7 @@ class SettingsActivity : AppCompatActivity() {
 
     private lateinit var swSaveVoice: Switch
     private lateinit var swSaveUser: Switch
+    private lateinit var swStreamSpeech: Switch
     private lateinit var etMaxCount: EditText
     private lateinit var etMaxDays: EditText
     private lateinit var tvLibPath: TextView
@@ -110,6 +125,7 @@ class SettingsActivity : AppCompatActivity() {
         setContentView(R.layout.activity_settings)
         config = ApiConfig(this)
         local = AudioSettings(this)
+        player = AudioPlayer(this)
 
         spProfile = findViewById(R.id.spProfile)
         etBase = findViewById(R.id.etBase)
@@ -147,6 +163,7 @@ class SettingsActivity : AppCompatActivity() {
 
         swSaveVoice = findViewById(R.id.swSaveVoice)
         swSaveUser = findViewById(R.id.swSaveUser)
+        swStreamSpeech = findViewById(R.id.swStreamSpeech)
         etMaxCount = findViewById(R.id.etMaxCount)
         etMaxDays = findViewById(R.id.etMaxDays)
         tvLibPath = findViewById(R.id.tvLibPath)
@@ -195,7 +212,8 @@ class SettingsActivity : AppCompatActivity() {
         findViewById<View>(R.id.btnAddProfile).setOnClickListener { addProfile() }
         findViewById<View>(R.id.btnDupProfile).setOnClickListener { dupProfile() }
         findViewById<View>(R.id.btnDelProfile).setOnClickListener { delProfile() }
-        findViewById<View>(R.id.btnTest).setOnClickListener { testEndpoint() }
+        btnTest = findViewById(R.id.btnTest)
+        btnTest.setOnClickListener { testEndpoint() }
         findViewById<View>(R.id.btnPullModels).setOnClickListener { pullModels() }
         findViewById<View>(R.id.btnSave).setOnClickListener { saveAll() }
 
@@ -235,10 +253,24 @@ class SettingsActivity : AppCompatActivity() {
         }
 
         loadLocalSettings()
+        // Stream mode 影响下一轮对话，改了立刻生效 —— 不用记得再按「保存」
+        swStreamSpeech.setOnCheckedChangeListener { _, on -> local.saveStreamSpeech(on) }
         renderEditor()
     }
 
     // ---------------- profile 编辑 ----------------
+
+    override fun onDestroy() {
+        // 只停「本页发起的试听」。主屏的逐句播报共用同一条播放通道，
+        // 这里无脑 player.stop() 会把用户正在听的回复一起掐断
+        // （表现：从设置页返回主屏，语音自己停了）。
+        if (ttsTestPlaying) {
+            ttsTestPlaying = false
+            player.stop()
+        }
+        ttsTestToken++
+        super.onDestroy()
+    }
 
     private fun switchSlot(slot: Slot) {
         commit()
@@ -374,13 +406,49 @@ class SettingsActivity : AppCompatActivity() {
     }
 
     private fun testEndpoint() {
+        // 正在试听：这一下当「停止」用，不要重新合成一遍
+        if (ttsTestPlaying) {
+            stopTtsTest()
+            return
+        }
         commit()
         val e = work[current]!!.let { it.list[it.active] }
         tvResult.text = getString(R.string.testing)
         thread {
             val res = ApiTester.test(current, e, local.asrTimeoutSec(), local.ttsTimeoutSec())
-            runOnUiThread { tvResult.text = "${if (res.ok) "✔" else "✘"} ${res.message}" }
+            runOnUiThread {
+                val head = "${if (res.ok) "✔" else "✘"} ${res.message}"
+                val audio = res.audio
+                if (!res.ok || audio == null || audio.bytes.isEmpty()) {
+                    tvResult.text = head
+                    return@runOnUiThread
+                }
+                // TTS 必须真的出声：光看「OK · 15 KB · audio/pcm」是听不出音色的
+                val token = ++ttsTestToken
+                ttsTestPlaying = true
+                btnTest.text = getString(R.string.btn_stop)
+                tvResult.text = "$head · ${getString(R.string.tts_test_playing)}"
+                player.play(audio.contentType, audio.bytes) {
+                    runOnUiThread {
+                        if (isFinishing || isDestroyed || token != ttsTestToken) {
+                            return@runOnUiThread
+                        }
+                        ttsTestPlaying = false
+                        btnTest.text = getString(R.string.btn_test)
+                        tvResult.text = "$head · ${getString(R.string.tts_test_done)}"
+                    }
+                }
+            }
         }
+    }
+
+    /** 停止试听，并把按钮/状态行复位。 */
+    private fun stopTtsTest() {
+        ttsTestToken++              // 让在途的播完回调失效
+        ttsTestPlaying = false
+        player.stop()
+        btnTest.text = getString(R.string.btn_test)
+        tvResult.text = getString(R.string.tts_test_stopped)
     }
 
     private fun pullModels() {
@@ -539,6 +607,7 @@ class SettingsActivity : AppCompatActivity() {
 
         swSaveVoice.isChecked = local.saveVoice()
         swSaveUser.isChecked = local.saveUserAudio()
+        swStreamSpeech.isChecked = local.streamSpeech()
         etMaxCount.setText(local.voiceMaxCount().toString())
         etMaxDays.setText(local.voiceMaxDays().toString())
         etRefinePrompt.setText(local.refinePrompt())
@@ -586,6 +655,7 @@ class SettingsActivity : AppCompatActivity() {
         )
         local.saveRefinePrompt(etRefinePrompt.text.toString())
         local.saveLiveRefine(swLiveRefine.isChecked)
+        local.saveStreamSpeech(swStreamSpeech.isChecked)
         local.saveSphereStyle(SphereStyle.entries[spStyle.selectedItemPosition.coerceIn(
             0, SphereStyle.entries.size - 1
         )].id)

@@ -82,12 +82,36 @@ class AudioSettings(context: Context) {
     /**
      * 合成请求最多等多久（秒）。本地 TTS 跑大模型时，长段落可能要几分钟，
      * 而服务端是「全部合成完才返回」，等待期间一个字节都不回。
+     *
+     * 逐句播报打开后每段都很短，这个上限基本只在「整段模式」下才用得上。
      */
     fun ttsTimeoutSec(): Int = sp.getInt(KV_TTS_TIMEOUT, 90).coerceIn(10, 3600)
 
     fun saveTtsTimeoutSec(sec: Int) = sp.edit()
         .putInt(KV_TTS_TIMEOUT, sec.coerceIn(10, 3600))
         .apply()
+
+    // ---- 逐句流式播报 ----
+
+    /**
+     * 逐句流式播报：LLM 一出句号就把这一句送去 TTS，合成一段播一段，
+     * 不用等整段回复都合成完才开口。
+     *
+     * 这是**纯客户端的编排**：只做本地切句 + 多打几次 `/audio/speech`，
+     * 不依赖任何后端特性，所以对任意 OpenAI 兼容 TTS 都成立；
+     * 关掉就退回「整段合成完再播」的老行为。
+     */
+    fun streamSpeech(): Boolean = sp.getBoolean(KV_STREAM_SPEECH, true)
+
+    fun saveStreamSpeech(on: Boolean) = sp.edit()
+        .putBoolean(KV_STREAM_SPEECH, on)
+        .apply()
+
+    /** 首片最大字数：越小开口越快，但句子被切得越碎（默认 30）。 */
+    fun firstChunkChars(): Int = sp.getInt(KV_FIRST_CHUNK, 30).coerceIn(8, 200)
+
+    /** 后续每片最大字数：越大请求越少、韵律越稳，但段间延迟更明显（默认 80）。 */
+    fun chunkChars(): Int = sp.getInt(KV_CHUNK, 80).coerceIn(20, 500)
 
     // ---- Live（常驻监听）----
 
@@ -183,6 +207,10 @@ class AudioSettings(context: Context) {
 
         private const val KV_ASR_TIMEOUT = "asr_timeout_s"
         private const val KV_TTS_TIMEOUT = "tts_timeout_s"
+
+        private const val KV_STREAM_SPEECH = "tts_stream_speech"
+        private const val KV_FIRST_CHUNK = "tts_first_chunk_chars"
+        private const val KV_CHUNK = "tts_chunk_chars"
 
         private const val KV_LIVE = "live_enabled"
         private const val KV_LIVE_REFINE = "live_refine"

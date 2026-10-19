@@ -16,19 +16,23 @@ object LlmClient {
      *
      * 服务端会把这一句写进它的 chat.jsonl，历史从几千轮里自己滑动，
      * 所以客户端**不要**再带 messages。
+     *
+     * @param shouldStop 返回 true 就尽快收流（用户按了停止 / 这一轮被顶掉）。
+     *   放在最后一个参数，老的调用点（trailing lambda）不受影响。
      */
     fun streamText(
         base: String,
         key: String,
         model: String,
         text: String,
-        onDelta: (String) -> Unit
+        onDelta: (String) -> Unit,
+        shouldStop: () -> Boolean = { false },
     ): String {
         val payload = JSONObject()
             .put("model", model)
             .put("stream", true)
             .put("text", text)
-        return postStream(base, key, payload, onDelta)
+        return postStream(base, key, payload, onDelta, shouldStop)
     }
 
     /** 通用 OpenAI 模式：由客户端带完整 messages。 */
@@ -37,7 +41,8 @@ object LlmClient {
         key: String,
         model: String,
         history: List<Msg>,
-        onDelta: (String) -> Unit
+        onDelta: (String) -> Unit,
+        shouldStop: () -> Boolean = { false },
     ): String {
         val messages = JSONArray()
         for (m in history) {
@@ -47,7 +52,7 @@ object LlmClient {
             .put("model", model)
             .put("stream", true)
             .put("messages", messages)
-        return postStream(base, key, payload, onDelta)
+        return postStream(base, key, payload, onDelta, shouldStop)
     }
 
     // ---- 下面是两种模式共用的 HTTP + SSE 解析 ----
@@ -56,7 +61,8 @@ object LlmClient {
         base: String,
         key: String,
         payload: JSONObject,
-        onDelta: (String) -> Unit
+        onDelta: (String) -> Unit,
+        shouldStop: () -> Boolean,
     ): String {
         val url = Http.endpoint(base, "chat/completions", "/chat/completions")
         if (url.isEmpty()) throw IOException("LLM Base URL 为空")
@@ -70,7 +76,8 @@ object LlmClient {
             val sb = StringBuilder()
             val think = IntArray(1)
             try {
-                streamOnce(url, key, payload, sb, onDelta, think)
+                streamOnce(url, key, payload, sb, onDelta, think, shouldStop)
+                if (shouldStop()) return sb.toString()
                 if (sb.isEmpty()) {
                     // 推理模型（如 nemotron / o 系列）会把 token 全花在 reasoning 上，
                     // 正文一个字节都不吐。直接说「没有内容」会把排查带偏，这里分开报。
@@ -85,6 +92,7 @@ object LlmClient {
                 }
                 return sb.toString()
             } catch (e: IOException) {
+                if (shouldStop()) return sb.toString()
                 if (attempt >= 1 || sb.isNotEmpty() || !Http.isTransportError(e)) throw e
                 attempt++
                 Log.w(TAG, "LLM 第一次失败（${e.javaClass.simpleName}: ${e.message}），换新连接重试")
@@ -106,6 +114,7 @@ object LlmClient {
         sb: StringBuilder,
         onDelta: (String) -> Unit,
         think: IntArray,
+        shouldStop: () -> Boolean,
     ) {
         val conn = Http.open(url, key, "POST", readTimeoutMs = LLM_READ_TIMEOUT_MS)
         conn.doOutput = true
@@ -121,6 +130,7 @@ object LlmClient {
 
             conn.inputStream.bufferedReader().use { reader ->
                 while (true) {
+                    if (shouldStop()) break
                     val line = reader.readLine() ?: break
                     if (line.isEmpty() || !line.startsWith("data:")) continue
                     val data = line.substring(5).trim()

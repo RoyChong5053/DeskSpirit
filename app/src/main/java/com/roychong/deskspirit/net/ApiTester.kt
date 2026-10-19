@@ -12,7 +12,16 @@ import org.json.JSONObject
  */
 object ApiTester {
 
-    data class Result(val ok: Boolean, val message: String)
+    /**
+     * TTS 试听的固定短句。挑一句自然的问句：既验证连通，又能直接听音色/韵律，
+     * 而且短 —— 本地 TTS 也能几秒内出结果。
+     */
+    private const val TTS_PROBE_TEXT = "你好，有什么能帮到你吗？"
+
+    /**
+     * @param audio 只有 TTS 测试带回合成结果 —— 设置页拿到它直接试听，才能听出音色。
+     */
+    data class Result(val ok: Boolean, val message: String, val audio: TtsClient.Audio? = null)
 
     data class Models(val ok: Boolean, val ids: List<String>, val message: String)
 
@@ -72,12 +81,13 @@ object ApiTester {
         if (e.baseUrl.isBlank()) return Result(false, "Base URL 为空")
         if (e.model.isBlank()) return Result(false, "Model 为空")
         return try {
+            // 真的合成一句：设置页拿 audio 直接播出来试听
             val audio = TtsClient.synthesize(
-                e.baseUrl, e.apiKey, e.model, e.voice, "你好，我是 DeskSpirit。",
+                e.baseUrl, e.apiKey, e.model, e.voice, TTS_PROBE_TEXT,
                 readTimeoutMs = timeoutSec.coerceIn(10, 3600) * 1000,
             )
             val kind = audio.contentType.ifBlank { "audio/?" }
-            Result(true, "OK · ${audio.bytes.size / 1024} KB · $kind")
+            Result(true, "OK · ${audio.bytes.size / 1024} KB · $kind", audio)
         } catch (ex: Exception) {
             Result(false, ex.message ?: ex.javaClass.simpleName)
         }

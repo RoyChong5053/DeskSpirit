@@ -128,14 +128,27 @@ class Spectrum(private val size: Int = 1024) {
         /** 从第 [offsetSamples] 个样本起转换 [count] 个样本。 */
         fun le16ToShortsAt(bytes: ByteArray, offsetSamples: Int, count: Int): ShortArray {
             val out = ShortArray(count)
+            le16ToShortsInto(bytes, offsetSamples, out, count)
+            return out
+        }
+
+        /**
+         * 同 [le16ToShortsAt]，但写进调用方给的缓冲。
+         * 连续播放时每 ~43ms 就要转一块，复用缓冲省掉大量小对象分配。
+         */
+        fun le16ToShortsInto(
+            src: ByteArray,
+            offsetSamples: Int,
+            dst: ShortArray,
+            count: Int,
+        ) {
             var p = offsetSamples * 2
             for (i in 0 until count) {
-                val lo = bytes[p].toInt() and 0xFF
-                val hi = bytes[p + 1].toInt()
-                out[i] = ((hi shl 8) or lo).toShort()
+                val lo = src[p].toInt() and 0xFF
+                val hi = src[p + 1].toInt()
+                dst[i] = ((hi shl 8) or lo).toShort()
                 p += 2
             }
-            return out
         }
     }
 }
