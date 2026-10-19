@@ -273,14 +273,27 @@ class AudioPlayer(private val context: Context) {
             try {
                 // 预垫：先攒够 [PREROLL_MS] 毫秒再开口。Kokoro 一次算一整片才发回来，
                 // 一片要 1~8 秒；如果第一片刚回来就开口，第二片还没算好缓冲就见底了。
+                //
+                // 但队列是按「块」限长的（QUEUE_CHUNKS），而云端 TTS（OpenRouter /
+                // Cloudflare）一次 read() 往往只有 1~2 KB：64 块加起来可能还不到
+                // 2.5 秒。这时如果只等字节数，push 会先把队列塞满并永久阻塞，
+                // 喂数线程又永远等不到门槛 —— 双向死锁，界面一直卡在「合成中」。
+                // 所以「队列已满」也算攒够了：再多也装不下，先开口让合成继续跑。
                 val preRollBytes = sampleRate * 2 * PREROLL_MS / 1000
-                while (!cancelled && !allPushed && queuedBytes.get() < preRollBytes) {
+                while (!cancelled && !allPushed && queuedBytes.get() < preRollBytes &&
+                    queue.remainingCapacity() > 0
+                ) {
                     try {
                         Thread.sleep(20)
                     } catch (e: InterruptedException) {
                         break
                     }
                 }
+                Log.i(
+                    TAG,
+                    "preroll: ${queuedBytes.get()}B / ${preRollBytes}B, " +
+                        "queued=${QUEUE_CHUNKS - queue.remainingCapacity()}/$QUEUE_CHUNKS"
+                )
 
                 while (!cancelled) {
                     var c: Chunk? = null
