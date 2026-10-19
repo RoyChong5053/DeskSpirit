@@ -111,28 +111,48 @@ class SpeechSegmenter(
     private fun steadyCut(n: Int, force: Boolean): Int {
         if (!force && n < MIN) return 0
         val lo = if (force) 0 else MIN
-        val hi = minOf(max, n)
 
-        // 1) 强边界：取窗口内最后一个完整句末
-        for (i in hi - 1 downTo lo) {
+        // 1) 强边界：窗口 [lo, max] 内取**最后一个**完整句末；
+        //    同时记住窗口外第一个安全句末（firstOut），作为"结构性卡住"时的逃生口。
+        var lastIn = 0
+        var firstOut = 0
+        var i = lo
+        while (i < n) {
             if (isStrong(raw[i])) {
                 val end = extendTrailing(i + 1)
-                if (safe(end)) return end
+                if (safe(end)) {
+                    if (end <= max) {
+                        lastIn = end
+                    } else {
+                        firstOut = end
+                        break
+                    }
+                }
+                i = if (end > i) end else i + 1
+                continue
             }
+            i++
         }
+        // 窗口没攒满就先不切（除非已经收尾）。这样片长才会稳定在 60–80 字，
+        // 而不是"LLM 吐一句就切一句"，又回到 17 字一请求的碎节奏。
+        if (lastIn > 0 && (force || n >= max)) return lastIn
 
         // 2) 还没攒到 max：继续等（攒得越满，片长越均匀）
         if (!force && n < max) return 0
 
-        // 3) 没有句末就退到逗号/顿号（同样取窗口内最后一个）
-        for (j in hi - 1 downTo maxOf(lo, 1)) {
+        // 3) 窗口内没有句末就退到逗号/顿号（同样取窗口内最后一个）
+        for (j in minOf(max, n) - 1 downTo maxOf(lo, 1)) {
             if (isWeak(raw[j]) && safe(j + 1)) return j + 1
         }
 
-        // 4) 兜底
+        // 4) 窗口内一个安全切点都没有（长括号描写 / 代码块还没闭合 / 杂散的 *）：
+        //    宁可稍微超长，也不能把两百多字攒成一片 —— 那一声会明显卡住。
+        if (firstOut > 0 && firstOut <= HARD_LIMIT) return firstOut
+
+        // 5) 兜底
         if (n >= HARD_LIMIT) return hardCut()
         if (force && n <= max) return n
-        return if (safe(hi)) hi else if (force) hardCut() else 0
+        return if (safe(minOf(max, n))) minOf(max, n) else if (force) hardCut() else 0
     }
 
     /**
@@ -155,42 +175,53 @@ class SpeechSegmenter(
      * 光数"成对"是不够的：`**先把这杯喝了。` 里 `*` 也是偶数个，
      * 但它明明是把加粗的开头切出来了（后面会多出一个孤零零的 `**`）。
      * 所以这里跑一个小状态机，只有"加粗/斜体/行内码/围栏/括号全都闭合"才放行。
+     *
+     * 但标记如果**开了整整一个窗口还没闭合**，那基本是模型漏写、或者
+     * 列表项前面那种落单的 `*`、没配对的括号。再让它挡切点，就会把几百字
+     * 攒成一片（实测出现过 230 字／24 秒）。所以只拦「刚打开、还没闭合」的标记。
      */
     private fun safe(end: Int): Boolean {
-        var bold = false
-        var italic = false
-        var tick = false
-        var fence = false
+        var bold = -1
+        var italic = -1
+        var tick = -1
+        var fence = -1
         var paren = 0
+        var parenAt = -1
         var i = 0
         while (i < end) {
             when (raw[i]) {
                 '`' -> if (i + 2 < end && raw[i + 1] == '`' && raw[i + 2] == '`') {
-                    fence = !fence
+                    fence = if (fence < 0) i else -1
                     i += 3
                 } else {
-                    tick = !tick
+                    tick = if (tick < 0) i else -1
                     i++
                 }
                 '*' -> if (i + 1 < end && raw[i + 1] == '*') {
-                    bold = !bold
+                    bold = if (bold < 0) i else -1
                     i += 2
                 } else {
-                    italic = !italic
+                    italic = if (italic < 0) i else -1
                     i++
                 }
                 '（', '(' -> {
+                    if (paren == 0) parenAt = i
                     paren++
                     i++
                 }
                 '）', ')' -> {
-                    paren--
+                    // 只减到 0：多出来的右括号（颜文字残留）不能把后面的切点全毒死
+                    if (paren > 0) paren--
+                    if (paren == 0) parenAt = -1
                     i++
                 }
                 else -> i++
             }
         }
-        return !bold && !italic && !tick && !fence && paren == 0
+        val stale = end - max
+        fun openAt(p: Int) = p in 0 until end && p > stale
+        return !openAt(bold) && !openAt(italic) && !openAt(tick) &&
+            !openAt(fence) && !(paren > 0 && openAt(parenAt))
     }
 
     /** 硬上限兜底：尽量贴在最后一个弱边界上，实在没有就在上限处直接切。 */
